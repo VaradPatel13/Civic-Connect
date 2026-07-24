@@ -25,6 +25,13 @@ venv/
 .venv/
 env/
 
+# Coverage & pytest
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+
 # Environment variables
 .env
 .env.local
