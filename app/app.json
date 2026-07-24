@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "CivicConnect",
+    "slug": "civic-connect",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "civicconnect",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.civicconnect.app"
+    },
+    "android": {
+      "package": "org.civicconnect.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
