@@ -4,7 +4,7 @@ from uuid import UUID
 from geoalchemy2.elements import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload
 
 from backend.models.reports import (
     IssueCategory,
@@ -62,21 +62,21 @@ class ReportRepository:
         )
         self.session.add(log)
         await self.session.commit()
-        await self.session.refresh(report, ["photos", "status_logs", "assignments"])
-        return report
+        refreshed = await self.get_by_id(report.id)
+        return refreshed or report
 
     async def get_by_id(self, report_id: UUID) -> Report | None:
         stmt = (
             select(Report)
             .options(
-                selectinload(Report.photos),
-                selectinload(Report.status_logs),
-                selectinload(Report.assignments),
+                joinedload(Report.photos),
+                joinedload(Report.status_logs),
+                joinedload(Report.assignments),
             )
             .where(Report.id == report_id)
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalars().unique().first()
 
     async def list_reports(
         self,
@@ -87,9 +87,9 @@ class ReportRepository:
         limit: int = 20,
     ) -> Sequence[Report]:
         stmt = select(Report).options(
-            selectinload(Report.photos),
-            selectinload(Report.status_logs),
-            selectinload(Report.assignments),
+            joinedload(Report.photos),
+            joinedload(Report.status_logs),
+            joinedload(Report.assignments),
         )
         if citizen_id:
             stmt = stmt.where(Report.citizen_id == citizen_id)
@@ -100,7 +100,7 @@ class ReportRepository:
 
         stmt = stmt.order_by(Report.created_at.desc()).offset(skip).limit(limit)
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return result.scalars().unique().all()
 
     async def update_status(
         self,

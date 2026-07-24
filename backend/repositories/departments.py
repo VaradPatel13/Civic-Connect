@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload
 
 from backend.models.departments import Department, DepartmentCategory
 from backend.models.reports import Ward
@@ -16,29 +16,29 @@ class DepartmentRepository:
     async def list_departments(self) -> Sequence[Department]:
         stmt = (
             select(Department)
-            .options(selectinload(Department.category_links))
+            .options(joinedload(Department.category_links))
             .where(Department.is_active)
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return result.scalars().unique().all()
 
     async def get_by_id(self, dept_id: UUID) -> Department | None:
         stmt = (
             select(Department)
-            .options(selectinload(Department.category_links))
+            .options(joinedload(Department.category_links))
             .where(Department.id == dept_id)
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalars().unique().first()
 
     async def get_by_code(self, code: str) -> Department | None:
         stmt = (
             select(Department)
-            .options(selectinload(Department.category_links))
+            .options(joinedload(Department.category_links))
             .where(Department.code == code)
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalars().unique().first()
 
     async def find_department_for_category(self, category: str) -> Department | None:
         stmt = (
