@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 sys.path.insert(0, ".")
 
+import backend.models  # noqa: F401
 from backend.core.config import settings
 from backend.models.base import Base
-import backend.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

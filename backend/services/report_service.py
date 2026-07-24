@@ -1,15 +1,17 @@
-from typing import Optional, List, Sequence
+from collections.abc import Sequence
 from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
 
+from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.models.notifications import NotificationType
+from backend.models.reports import IssueCategory, Report, ReportStatus
+from backend.models.rewards import RewardReason
+from backend.repositories.notifications import NotificationRepository
 from backend.repositories.reports import ReportRepository
 from backend.repositories.rewards import RewardRepository
-from backend.repositories.notifications import NotificationRepository
-from backend.schemas.reports import ReportCreate, ReportUpdate
-from backend.models.reports import Report, ReportStatus, IssueCategory, UrgencyLevel
-from backend.models.rewards import RewardReason
-from backend.models.notifications import NotificationType
+from backend.schemas.reports import ReportCreate
+
 
 class ReportService:
     def __init__(self, session: AsyncSession):
@@ -62,9 +64,9 @@ class ReportService:
 
     async def list_reports(
         self,
-        citizen_id: Optional[UUID] = None,
-        status_filter: Optional[ReportStatus] = None,
-        category_filter: Optional[IssueCategory] = None,
+        citizen_id: UUID | None = None,
+        status_filter: ReportStatus | None = None,
+        category_filter: IssueCategory | None = None,
         skip: int = 0,
         limit: int = 20
     ) -> Sequence[Report]:
@@ -81,7 +83,7 @@ class ReportService:
         report_id: UUID,
         new_status: ReportStatus,
         changed_by: str = "system",
-        reason: Optional[str] = None
+        reason: str | None = None
     ) -> Report:
         report = await self.report_repo.update_status(report_id, new_status, changed_by, reason)
         if not report:

@@ -4,12 +4,12 @@ from fastapi import APIRouter, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.api.ai_pipeline import router as ai_router
 from backend.api.auth import router as auth_router
-from backend.api.reports import router as reports_router
 from backend.api.departments import router as departments_router
 from backend.api.notifications import router as notifications_router
+from backend.api.reports import router as reports_router
 from backend.api.rewards import router as rewards_router
-from backend.api.ai_pipeline import router as ai_router
 from backend.core.config import settings
 
 

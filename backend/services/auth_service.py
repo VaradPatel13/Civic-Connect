@@ -1,7 +1,7 @@
 import hashlib
 import random
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import bcrypt
 from jose import JWTError, jwt
@@ -37,27 +37,27 @@ class AuthService:
         return hashlib.sha256(otp.encode()).hexdigest()
 
     def create_access_token(self, citizen_id: str, role: str) -> str:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+        expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
         payload = {
             "sub": citizen_id,
             "role": role,
             "exp": expire,
             "type": "access",
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
         }
         return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
     def create_refresh_token(self, citizen_id: str) -> str:
-        expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         payload = {
             "sub": citizen_id,
             "exp": expire,
             "type": "refresh",
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
         }
         return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
-    def verify_token(self, token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+    def verify_token(self, token: str, token_type: str = "access") -> dict[str, Any] | None:
         try:
             payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
             if payload.get("type") != token_type:

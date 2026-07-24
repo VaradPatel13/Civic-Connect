@@ -11,19 +11,23 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.models.reports import Report
 
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
-    Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
@@ -60,7 +64,7 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
 
     # Optional linkage to a common workflow run (all agents in one
     # pipeline execution share the same workflow_id).
-    workflow_id: Mapped[Optional[str]] = mapped_column(
+    workflow_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, index=True
     )
 
@@ -68,10 +72,10 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
     agent_name: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True
     )
-    model_used: Mapped[Optional[str]] = mapped_column(
+    model_used: Mapped[str | None] = mapped_column(
         String(100), nullable=True
     )
-    model_version: Mapped[Optional[str]] = mapped_column(
+    model_version: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )
 
@@ -81,10 +85,10 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         server_default=func.now(),
     )
-    ended_at: Mapped[Optional[datetime]] = mapped_column(
+    ended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    execution_ms: Mapped[Optional[int]] = mapped_column(
+    execution_ms: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
 
@@ -96,16 +100,16 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
         server_default="running",
         index=True,
     )
-    confidence: Mapped[Optional[float]] = mapped_column(nullable=True)
+    confidence: Mapped[float | None] = mapped_column(nullable=True)
 
     # ── Snapshots (JSONB for flexibility) ──────────────────────────────
-    input_snapshot: Mapped[Optional[dict]] = mapped_column(
+    input_snapshot: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )
-    output_snapshot: Mapped[Optional[dict]] = mapped_column(
+    output_snapshot: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )
-    error_snapshot: Mapped[Optional[dict]] = mapped_column(
+    error_snapshot: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )
 

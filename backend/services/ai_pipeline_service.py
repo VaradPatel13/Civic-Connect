@@ -1,13 +1,15 @@
-from typing import Dict, Any, Optional
-from uuid import UUID
 import uuid
+from typing import Any
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.repositories.reports import ReportRepository
-from backend.repositories.departments import DepartmentRepository
-from backend.repositories.agent_executions import AgentExecutionRepository
-from backend.models.reports import ReportStatus, UrgencyLevel, IssueCategory, Assignment, AssignmentStatus
 from backend.models.agent_executions import AgentStatus
+from backend.models.reports import Assignment, AssignmentStatus, ReportStatus
+from backend.repositories.agent_executions import AgentExecutionRepository
+from backend.repositories.departments import DepartmentRepository
+from backend.repositories.reports import ReportRepository
+
 
 class AIPipelineService:
     """Simulates/executes the AI Multi-Agent orchestration pipeline:
@@ -24,7 +26,7 @@ class AIPipelineService:
         self.dept_repo = DepartmentRepository(session)
         self.agent_repo = AgentExecutionRepository(session)
 
-    async def process_report(self, report_id: UUID) -> Dict[str, Any]:
+    async def process_report(self, report_id: UUID) -> dict[str, Any]:
         workflow_id = str(uuid.uuid4())
         report = await self.report_repo.get_by_id(report_id)
         if not report:
@@ -43,7 +45,7 @@ class AIPipelineService:
             model_used="gemini-1.5-flash",
             input_snapshot={"title": report.title, "description": report.description}
         )
-        
+
         # Simulated moderation check
         is_safe = True
         mod_result = {"flagged": False, "reason": None, "safety_score": 0.98}
@@ -59,7 +61,6 @@ class AIPipelineService:
             return {"status": "rejected", "reason": "Content flagged"}
 
         # 2. Forensics Agent Execution (if photos present)
-        forensic_score = 0.95
         if photo_count > 0:
             exec_forensic = await self.agent_repo.start_execution(
                 report_id=report_id,
@@ -83,7 +84,7 @@ class AIPipelineService:
             model_used="gemini-1.5-pro",
             input_snapshot={"text": report.description}
         )
-        
+
         category_str = report.issue_category.value if hasattr(report.issue_category, "value") else str(report.issue_category)
         await self.agent_repo.complete_execution(
             execution_id=exec_cat.id,
@@ -118,7 +119,7 @@ class AIPipelineService:
             )
             self.session.add(assignment)
             await self.session.commit()
-            
+
             await self.report_repo.update_status(report_id, ReportStatus.ASSIGNED, changed_by="routing_agent", reason=f"Assigned to {dept.name}")
 
         await self.agent_repo.complete_execution(

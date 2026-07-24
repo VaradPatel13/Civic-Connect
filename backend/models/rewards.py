@@ -14,23 +14,27 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.models.citizens import Citizen
+    from backend.models.reports import Report
 
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
     Text,
-    func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
-
 
 # ---------------------------------------------------------------------------
 # Enum
@@ -77,7 +81,7 @@ class RewardTransaction(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
 
-    report_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    report_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("reports.id", ondelete="SET NULL"),
         nullable=True,
@@ -95,7 +99,7 @@ class RewardTransaction(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── Balance snapshot ───────────────────────────────────────────────
     previous_balance: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -116,24 +120,24 @@ class RewardTransaction(Base, UUIDMixin, TimestampMixin):
     )
 
     # ── Reversibility ──────────────────────────────────────────────────
-    reversed_at: Mapped[Optional[datetime]] = mapped_column(
+    reversed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    reverse_of_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    reverse_of_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
 
     # ── Extra context ──────────────────────────────────────────────────
-    extra_metadata: Mapped[Optional[dict]] = mapped_column(
+    extra_metadata: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )
 
     # ── Relationships ──────────────────────────────────────────────────
-    citizen: Mapped["Citizen"] = relationship(
+    citizen: Mapped[Citizen] = relationship(
         "Citizen", back_populates="reward_transactions"
     )
     # String form avoids import-time circular reference with reports.py
-    report: Mapped[Optional["Report"]] = relationship(
+    report: Mapped[Report | None] = relationship(
         "Report", back_populates="rewards"
     )
 

@@ -9,9 +9,20 @@ Typical usage::
     # all models are now registered
 """
 
+from backend.models.agent_executions import (
+    AgentExecution,
+    AgentStatus,
+)
 from backend.models.base import Base
 from backend.models.citizens import Citizen, OTPCode, Session
 from backend.models.departments import Department, DepartmentCategory
+from backend.models.notifications import (
+    DeliveryStatus,
+    Notification,
+    NotificationChannel,
+    NotificationPriority,
+    NotificationType,
+)
 from backend.models.reports import (
     Assignment,
     AssignmentStatus,
@@ -23,20 +34,9 @@ from backend.models.reports import (
     UrgencyLevel,
     Ward,
 )
-from backend.models.notifications import (
-    DeliveryStatus,
-    Notification,
-    NotificationChannel,
-    NotificationPriority,
-    NotificationType,
-)
 from backend.models.rewards import (
-    RewardTransaction,
     RewardReason,
-)
-from backend.models.agent_executions import (
-    AgentExecution,
-    AgentStatus,
+    RewardTransaction,
 )
 
 __all__ = [

@@ -1,8 +1,10 @@
 from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.repositories.rewards import RewardRepository
 from backend.schemas.rewards import RewardBalanceResponse, RewardTransactionResponse
+
 
 class RewardService:
     def __init__(self, session: AsyncSession):

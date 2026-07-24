@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.database import get_db
 from backend.api.deps import get_current_user
+from backend.core.database import get_db
 from backend.models.citizens import Citizen
 from backend.schemas.rewards import RewardBalanceResponse
 from backend.services.reward_service import RewardService

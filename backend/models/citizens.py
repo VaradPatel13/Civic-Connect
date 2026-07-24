@@ -12,14 +12,19 @@ users, departments, and report entities are modeled separately.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
+if TYPE_CHECKING:
+    from backend.models.notifications import Notification
+    from backend.models.reports import Report
+    from backend.models.rewards import RewardTransaction
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.models.base import Base, PreferredLanguage, TimestampMixin, UUIDMixin, UserRole
+from backend.models.base import Base, PreferredLanguage, TimestampMixin, UserRole, UUIDMixin
 
 
 class Citizen(Base, UUIDMixin, TimestampMixin):
@@ -32,7 +37,7 @@ class Citizen(Base, UUIDMixin, TimestampMixin):
 
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
-    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
     preferred_language: Mapped[PreferredLanguage] = mapped_column(
@@ -45,8 +50,8 @@ class Citizen(Base, UUIDMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    push_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    notification_preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    push_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notification_preferences: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role", native_enum=False),
@@ -60,17 +65,17 @@ class Citizen(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
-    reports: Mapped[list["Report"]] = relationship(
+    reports: Mapped[list[Report]] = relationship(
         "Report",
         back_populates="citizen",
         cascade="all, delete-orphan",
     )
-    notifications: Mapped[list["Notification"]] = relationship(
+    notifications: Mapped[list[Notification]] = relationship(
         "Notification",
         back_populates="citizen",
         cascade="all, delete-orphan",
     )
-    reward_transactions: Mapped[list["RewardTransaction"]] = relationship(
+    reward_transactions: Mapped[list[RewardTransaction]] = relationship(
         "RewardTransaction",
         back_populates="citizen",
         cascade="all, delete-orphan",
@@ -96,16 +101,16 @@ class Session(Base, UUIDMixin, TimestampMixin):
     )
     refresh_token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    device_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    platform: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    app_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    device_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    platform: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     last_active_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
     )
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+    revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         default=None,
@@ -129,7 +134,7 @@ class OTPCode(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "otp_codes"
 
-    citizen_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    citizen_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("citizens.id", ondelete="CASCADE"),
         nullable=True,
@@ -144,7 +149,7 @@ class OTPCode(Base, UUIDMixin, TimestampMixin):
         nullable=False,
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    consumed_at: Mapped[Optional[datetime]] = mapped_column(
+    consumed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         default=None,
@@ -152,8 +157,7 @@ class OTPCode(Base, UUIDMixin, TimestampMixin):
 
     @property
     def is_expired(self) -> bool:
-        from datetime import timezone
-        return datetime.now(timezone.utc) >= self.expires_at
+        return datetime.now(UTC) >= self.expires_at
 
     @property
     def is_consumed(self) -> bool:

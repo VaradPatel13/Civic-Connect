@@ -1,5 +1,4 @@
 import uuid
-from typing import AsyncGenerator
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -28,7 +27,7 @@ async def get_current_user(
 ) -> Citizen:
     token = credentials.credentials
     payload = auth_service.verify_token(token, token_type="access")
-    
+
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -46,12 +45,12 @@ async def get_current_user(
 
     try:
         citizen_id = uuid.UUID(citizen_id_str)
-    except ValueError:
+    except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token sub format",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from err
 
     citizen = await user_repo.get_by_id(citizen_id)
     if not citizen:

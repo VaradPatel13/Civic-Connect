@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -7,7 +7,7 @@ class RegisterRequest(BaseModel):
     display_name: str = Field(..., min_length=2, max_length=255, description="Full name of citizen")
     phone: str = Field(..., min_length=10, max_length=10, pattern=r"^\d{10}$", description="10-digit mobile number")
     password: str = Field(..., min_length=8, max_length=128, description="Account password")
-    email: Optional[EmailStr] = Field(default=None, description="Optional email address")
+    email: EmailStr | None = Field(default=None, description="Optional email address")
     preferred_language: str = Field(default="en", pattern="^(en|hi|mr)$", description="Language preference (en, hi, mr)")
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -36,7 +36,7 @@ class CitizenProfileResponse(BaseModel):
     id: str
     display_name: str
     phone: str
-    email: Optional[str] = None
+    email: str | None = None
     preferred_language: str = "en"
     points: int = 0
     is_active: bool = True

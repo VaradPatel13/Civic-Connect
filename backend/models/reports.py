@@ -15,24 +15,31 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.models.agent_executions import AgentExecution
+    from backend.models.citizens import Citizen
+    from backend.models.departments import Department
+    from backend.models.rewards import RewardTransaction
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.models.base import Base, TimestampMixin, UUIDMixin
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -146,7 +153,7 @@ class Report(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
 
-    ward_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    ward_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("wards.id", ondelete="SET NULL"),
         nullable=True,
@@ -161,8 +168,8 @@ class Report(Base, UUIDMixin, TimestampMixin):
     )
 
     # AI-generated (written once, never updated)
-    translated_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    translated_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     issue_category: Mapped[IssueCategory] = mapped_column(
         SQLEnum(IssueCategory, name="issue_category", native_enum=False),
@@ -185,49 +192,49 @@ class Report(Base, UUIDMixin, TimestampMixin):
     )
 
     # ── Location ───────────────────────────────────────────────────────
-    latitude: Mapped[Optional[float]] = mapped_column(nullable=True)
-    longitude: Mapped[Optional[float]] = mapped_column(nullable=True)
-    address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    ward: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    zone: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(nullable=True)
+    longitude: Mapped[float | None] = mapped_column(nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ward: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    location: Mapped[Optional[Geometry]] = mapped_column(
+    location: Mapped[Geometry | None] = mapped_column(
         Geometry(geometry_type="POINT", srid=4326, spatial_index=True),
         nullable=True,
     )
 
     # ── AI metadata ────────────────────────────────────────────────────
-    classification_confidence: Mapped[Optional[float]] = mapped_column(
+    classification_confidence: Mapped[float | None] = mapped_column(
         nullable=True
     )
-    moderation_result: Mapped[Optional[dict]] = mapped_column(
+    moderation_result: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )
-    forensics_result: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    ai_tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
+    forensics_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ai_tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     # ── Duplicate tracking ─────────────────────────────────────────────
     is_duplicate: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    duplicate_of_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    duplicate_of_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("reports.id", ondelete="SET NULL"),
         nullable=True,
     )
 
     # ── Resolution ──────────────────────────────────────────────────────
-    resolution_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    resolution_images: Mapped[Optional[list[str]]] = mapped_column(
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_images: Mapped[list[str] | None] = mapped_column(
         JSONB, nullable=True
     )
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(
+    resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
     # ── Relationships ──────────────────────────────────────────────────
     citizen: Mapped[Citizen] = relationship("Citizen", back_populates="reports")
-    ward_rel: Mapped[Optional[Ward]] = relationship(
+    ward_rel: Mapped[Ward | None] = relationship(
         "Ward", back_populates="reports"
     )
     photos: Mapped[list[Photo]] = relationship(
@@ -288,23 +295,23 @@ class Photo(Base, UUIDMixin, TimestampMixin):
     public_id: Mapped[str] = mapped_column(
         String(255), nullable=False, index=True
     )
-    secure_url: Mapped[Optional[str]] = mapped_column(
+    secure_url: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )
-    width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    format: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    bytes_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    format: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    bytes_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Forensic
-    forensic_score: Mapped[Optional[float]] = mapped_column(nullable=True)
-    forensic_result: Mapped[Optional[dict]] = mapped_column(
+    forensic_score: Mapped[float | None] = mapped_column(nullable=True)
+    forensic_result: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )
-    original_hash: Mapped[Optional[str]] = mapped_column(
+    original_hash: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
-    is_authentic: Mapped[Optional[bool]] = mapped_column(
+    is_authentic: Mapped[bool | None] = mapped_column(
         Boolean, nullable=True
     )
 
@@ -354,16 +361,16 @@ class Assignment(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         server_default=func.now(),
     )
-    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(
+    resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
     # Routing metadata (from Department Router agent)
-    routing_confidence: Mapped[Optional[float]] = mapped_column(nullable=True)
-    routing_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    routing_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    routing_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_by: Mapped[str] = mapped_column(
         String(50), nullable=False, default="system", server_default="system"
     )
@@ -372,11 +379,11 @@ class Assignment(Base, UUIDMixin, TimestampMixin):
     escalated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    escalation_reason: Mapped[Optional[str]] = mapped_column(
+    escalation_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )
 
-    resolution_notes: Mapped[Optional[str]] = mapped_column(
+    resolution_notes: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )
 
@@ -409,7 +416,7 @@ class StatusLog(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
 
-    from_status: Mapped[Optional[ReportStatus]] = mapped_column(
+    from_status: Mapped[ReportStatus | None] = mapped_column(
         SQLEnum(ReportStatus, name="report_status", native_enum=False),
         nullable=True,
     )
@@ -421,8 +428,8 @@ class StatusLog(Base, UUIDMixin, TimestampMixin):
     changed_by: Mapped[str] = mapped_column(
         String(50), nullable=False, default="system", server_default="system"
     )
-    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    extra_metadata: Mapped[Optional[dict]] = mapped_column(
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra_metadata: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )
 

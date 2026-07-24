@@ -1,10 +1,12 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from uuid import UUID
-from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from backend.models.agent_executions import AgentExecution, AgentStatus
+
 
 class AgentExecutionRepository:
     def __init__(self, session: AsyncSession):
@@ -14,9 +16,9 @@ class AgentExecutionRepository:
         self,
         report_id: UUID,
         agent_name: str,
-        workflow_id: Optional[str] = None,
-        model_used: Optional[str] = None,
-        input_snapshot: Optional[dict] = None
+        workflow_id: str | None = None,
+        model_used: str | None = None,
+        input_snapshot: dict | None = None
     ) -> AgentExecution:
         execution = AgentExecution(
             report_id=report_id,
@@ -25,7 +27,7 @@ class AgentExecutionRepository:
             model_used=model_used,
             status=AgentStatus.RUNNING,
             input_snapshot=input_snapshot,
-            started_at=datetime.now(timezone.utc)
+            started_at=datetime.now(UTC)
         )
         self.session.add(execution)
         await self.session.commit()
@@ -36,11 +38,11 @@ class AgentExecutionRepository:
         self,
         execution_id: UUID,
         status: AgentStatus = AgentStatus.COMPLETED,
-        confidence: Optional[float] = None,
-        output_snapshot: Optional[dict] = None,
-        error_snapshot: Optional[dict] = None,
-        execution_ms: Optional[int] = None
-    ) -> Optional[AgentExecution]:
+        confidence: float | None = None,
+        output_snapshot: dict | None = None,
+        error_snapshot: dict | None = None,
+        execution_ms: int | None = None
+    ) -> AgentExecution | None:
         stmt = select(AgentExecution).where(AgentExecution.id == execution_id)
         result = await self.session.execute(stmt)
         execution = result.scalar_one_or_none()
@@ -51,7 +53,7 @@ class AgentExecutionRepository:
         execution.confidence = confidence
         execution.output_snapshot = output_snapshot
         execution.error_snapshot = error_snapshot
-        execution.ended_at = datetime.now(timezone.utc)
+        execution.ended_at = datetime.now(UTC)
         if execution.started_at:
             delta = execution.ended_at - execution.started_at
             execution.execution_ms = execution_ms or int(delta.total_seconds() * 1000)

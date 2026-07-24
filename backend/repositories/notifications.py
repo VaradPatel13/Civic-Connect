@@ -1,11 +1,19 @@
-from typing import Optional, Sequence, List
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from uuid import UUID
-from datetime import datetime, timezone
+
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update
 
-from backend.models.notifications import Notification, NotificationType, NotificationPriority, NotificationChannel, DeliveryStatus
+from backend.models.notifications import (
+    DeliveryStatus,
+    Notification,
+    NotificationChannel,
+    NotificationPriority,
+    NotificationType,
+)
+
 
 class NotificationRepository:
     def __init__(self, session: AsyncSession):
@@ -19,9 +27,9 @@ class NotificationRepository:
         notification_type: NotificationType = NotificationType.SYSTEM,
         priority: NotificationPriority = NotificationPriority.NORMAL,
         channel: NotificationChannel = NotificationChannel.IN_APP,
-        report_id: Optional[UUID] = None,
-        deep_link: Optional[str] = None,
-        payload: Optional[dict] = None
+        report_id: UUID | None = None,
+        deep_link: str | None = None,
+        payload: dict | None = None
     ) -> Notification:
         notification = Notification(
             citizen_id=citizen_id,
@@ -32,7 +40,7 @@ class NotificationRepository:
             priority=priority,
             channel=channel,
             delivery_status=DeliveryStatus.DELIVERED,
-            delivered_at=datetime.now(timezone.utc),
+            delivered_at=datetime.now(UTC),
             deep_link=deep_link,
             payload=payload
         )
@@ -52,14 +60,14 @@ class NotificationRepository:
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def mark_as_read(self, citizen_id: UUID, notification_ids: List[UUID]) -> int:
+    async def mark_as_read(self, citizen_id: UUID, notification_ids: list[UUID]) -> int:
         stmt = (
             update(Notification)
             .where(Notification.citizen_id == citizen_id)
             .where(Notification.id.in_(notification_ids))
             .values(
                 delivery_status=DeliveryStatus.READ,
-                read_at=datetime.now(timezone.utc)
+                read_at=datetime.now(UTC)
             )
         )
         result = await self.session.execute(stmt)

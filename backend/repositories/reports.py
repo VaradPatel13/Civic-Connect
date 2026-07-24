@@ -1,11 +1,20 @@
-from typing import Optional, List, Sequence
+from collections.abc import Sequence
 from uuid import UUID
+
+from geoalchemy2.elements import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from geoalchemy2.elements import WKTElement
 
-from backend.models.reports import Report, Photo, StatusLog, Assignment, ReportStatus, UrgencyLevel, IssueCategory
+from backend.models.reports import (
+    IssueCategory,
+    Photo,
+    Report,
+    ReportStatus,
+    StatusLog,
+    UrgencyLevel,
+)
+
 
 class ReportRepository:
     def __init__(self, session: AsyncSession):
@@ -18,9 +27,9 @@ class ReportRepository:
         description: str,
         issue_category: IssueCategory,
         urgency: UrgencyLevel = UrgencyLevel.MEDIUM,
-        latitude: Optional[float] = None,
-        longitude: Optional[float] = None,
-        address: Optional[str] = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        address: str | None = None,
         language: str = "en"
     ) -> Report:
         location = None
@@ -56,7 +65,7 @@ class ReportRepository:
         await self.session.refresh(report, ["photos", "status_logs", "assignments"])
         return report
 
-    async def get_by_id(self, report_id: UUID) -> Optional[Report]:
+    async def get_by_id(self, report_id: UUID) -> Report | None:
         stmt = (
             select(Report)
             .options(
@@ -71,9 +80,9 @@ class ReportRepository:
 
     async def list_reports(
         self,
-        citizen_id: Optional[UUID] = None,
-        status: Optional[ReportStatus] = None,
-        category: Optional[IssueCategory] = None,
+        citizen_id: UUID | None = None,
+        status: ReportStatus | None = None,
+        category: IssueCategory | None = None,
         skip: int = 0,
         limit: int = 20
     ) -> Sequence[Report]:
@@ -88,7 +97,7 @@ class ReportRepository:
             stmt = stmt.where(Report.status == status)
         if category:
             stmt = stmt.where(Report.issue_category == category)
-        
+
         stmt = stmt.order_by(Report.created_at.desc()).offset(skip).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -98,15 +107,15 @@ class ReportRepository:
         report_id: UUID,
         new_status: ReportStatus,
         changed_by: str = "system",
-        reason: Optional[str] = None
-    ) -> Optional[Report]:
+        reason: str | None = None
+    ) -> Report | None:
         report = await self.get_by_id(report_id)
         if not report:
             return None
-        
+
         old_status = report.status
         report.status = new_status
-        
+
         log = StatusLog(
             report_id=report.id,
             from_status=old_status,

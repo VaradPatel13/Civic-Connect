@@ -1,15 +1,15 @@
-from typing import List, Optional
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.database import get_db
 from backend.api.deps import get_current_user
+from backend.core.database import get_db
 from backend.models.citizens import Citizen
-from backend.models.reports import ReportStatus, IssueCategory
-from backend.schemas.reports import ReportCreate, ReportUpdate, ReportResponse
-from backend.services.report_service import ReportService
+from backend.models.reports import IssueCategory, ReportStatus
+from backend.schemas.reports import ReportCreate, ReportResponse
 from backend.services.ai_pipeline_service import AIPipelineService
+from backend.services.report_service import ReportService
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -21,18 +21,18 @@ async def create_report(
 ):
     service = ReportService(db)
     report = await service.create_report(citizen_id=current_user.id, data=data)
-    
+
     # Trigger background AI processing pipeline asynchronously
     ai_service = AIPipelineService(db)
     await ai_service.process_report(report.id)
-    
+
     # Reload report with updated status and assignments
     return await service.get_report(report.id)
 
-@router.get("/", response_model=List[ReportResponse])
+@router.get("/", response_model=list[ReportResponse])
 async def list_reports(
-    status_filter: Optional[ReportStatus] = Query(None, alias="status"),
-    category_filter: Optional[IssueCategory] = Query(None, alias="category"),
+    status_filter: ReportStatus | None = Query(None, alias="status"),
+    category_filter: IssueCategory | None = Query(None, alias="category"),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     current_user: Citizen = Depends(get_current_user),
@@ -62,7 +62,7 @@ async def get_report(
 async def update_report_status(
     report_id: UUID,
     new_status: ReportStatus,
-    reason: Optional[str] = None,
+    reason: str | None = None,
     current_user: Citizen = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):

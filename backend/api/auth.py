@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, timezone
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -59,7 +59,7 @@ async def register(
         phone=payload.phone,
         code_hash=service.hash_password(otp_code),
         purpose="register",
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
     )
 
     access_token = service.create_access_token(str(user.id), str(user.role.value if hasattr(user.role, 'value') else user.role))
@@ -156,7 +156,7 @@ async def verify_otp(
             detail="Invalid OTP code",
         )
 
-    otp.consumed_at = datetime.now(timezone.utc)
+    otp.consumed_at = datetime.now(UTC)
     user.is_verified = True
     await user_repo.db.commit()
 
@@ -194,11 +194,11 @@ async def refresh(
     citizen_id_str = decoded.get("sub")
     try:
         citizen_id = uuid.UUID(citizen_id_str)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token payload",
-        )
+        ) from err
 
     user = await user_repo.get_by_id(citizen_id)
     if not user or not user.is_active:

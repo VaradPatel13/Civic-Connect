@@ -1,18 +1,20 @@
-from typing import Optional, Dict, Any
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict
+
 from backend.models.rewards import RewardReason
+
 
 class RewardTransactionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     citizen_id: UUID
-    report_id: Optional[UUID] = None
+    report_id: UUID | None = None
     points: int
     reason: RewardReason
-    description: Optional[str] = None
+    description: str | None = None
     previous_balance: int
     new_balance: int
     awarded_by: str

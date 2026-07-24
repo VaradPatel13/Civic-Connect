@@ -10,21 +10,20 @@ Specs: docs/specs/departments.md, docs/specs/database.md
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.models.reports import Assignment
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     Boolean,
-    DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     String,
     Text,
     UniqueConstraint,
-    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -65,19 +64,19 @@ class Department(Base, UUIDMixin, TimestampMixin):
         String(10), unique=True, nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True
     )
 
     # ── Contact ─────────────────────────────────────────────────────────
-    contact_email: Mapped[Optional[str]] = mapped_column(
+    contact_email: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
-    contact_phone: Mapped[Optional[str]] = mapped_column(
+    contact_phone: Mapped[str | None] = mapped_column(
         String(20), nullable=True
     )
-    operating_hours: Mapped[Optional[str]] = mapped_column(
+    operating_hours: Mapped[str | None] = mapped_column(
         String(100), nullable=True
     )
 
@@ -94,7 +93,7 @@ class Department(Base, UUIDMixin, TimestampMixin):
     )
 
     # ── Spatial ─────────────────────────────────────────────────────────
-    jurisdiction_geometry: Mapped[Optional[Geometry]] = mapped_column(
+    jurisdiction_geometry: Mapped[Geometry | None] = mapped_column(
         Geometry(
             geometry_type="MULTIPOLYGON",
             srid=4326,
@@ -107,7 +106,7 @@ class Department(Base, UUIDMixin, TimestampMixin):
     active_report_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
-    weekly_capacity: Mapped[Optional[int]] = mapped_column(
+    weekly_capacity: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
 

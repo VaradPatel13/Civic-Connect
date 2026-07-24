@@ -1,11 +1,13 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
 from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
 
-from backend.repositories.departments import DepartmentRepository
+from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.models.departments import Department
 from backend.models.reports import Ward
+from backend.repositories.departments import DepartmentRepository
+
 
 class DepartmentService:
     def __init__(self, session: AsyncSession):

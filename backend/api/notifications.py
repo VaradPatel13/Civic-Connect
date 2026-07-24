@@ -1,16 +1,16 @@
-from typing import List
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.database import get_db
 from backend.api.deps import get_current_user
+from backend.core.database import get_db
 from backend.models.citizens import Citizen
-from backend.schemas.notifications import NotificationResponse, NotificationMarkRead
+from backend.schemas.notifications import NotificationMarkRead, NotificationResponse
 from backend.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
-@router.get("/", response_model=List[NotificationResponse])
+@router.get("/", response_model=list[NotificationResponse])
 async def list_notifications(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),

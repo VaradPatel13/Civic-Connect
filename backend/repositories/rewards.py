@@ -1,10 +1,12 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
 from uuid import UUID
+
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
 
-from backend.models.rewards import RewardTransaction, RewardReason
+from backend.models.rewards import RewardReason, RewardTransaction
+
 
 class RewardRepository:
     def __init__(self, session: AsyncSession):
@@ -23,8 +25,8 @@ class RewardRepository:
         citizen_id: UUID,
         points: int,
         reason: RewardReason,
-        description: Optional[str] = None,
-        report_id: Optional[UUID] = None,
+        description: str | None = None,
+        report_id: UUID | None = None,
         awarded_by: str = "system"
     ) -> RewardTransaction:
         current_balance = await self.get_user_balance(citizen_id)

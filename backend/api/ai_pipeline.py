@@ -1,9 +1,10 @@
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.database import get_db
 from backend.api.deps import get_current_user
+from backend.core.database import get_db
 from backend.models.citizens import Citizen
 from backend.services.ai_pipeline_service import AIPipelineService
 
