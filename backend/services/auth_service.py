@@ -72,7 +72,11 @@ class AuthService:
             display_name=citizen.display_name,
             phone=citizen.phone,
             email=citizen.email,
-            preferred_language=str(citizen.preferred_language.value) if hasattr(citizen.preferred_language, "value") else str(citizen.preferred_language),
+            preferred_language=(
+                str(citizen.preferred_language.value)
+                if hasattr(citizen.preferred_language, "value")
+                else str(citizen.preferred_language)
+            ),
             points=citizen.points,
             is_active=citizen.is_active,
             is_verified=citizen.is_verified,

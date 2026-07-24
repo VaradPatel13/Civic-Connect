@@ -30,7 +30,7 @@ class ReportService:
             latitude=data.latitude,
             longitude=data.longitude,
             address=data.address,
-            language=data.language
+            language=data.language,
         )
 
         for photo_url in data.photos:
@@ -42,7 +42,7 @@ class ReportService:
             points=50,
             reason=RewardReason.REPORT_SUBMISSION,
             description=f"Submitted report '{report.title}'",
-            report_id=report.id
+            report_id=report.id,
         )
 
         # Create notification
@@ -51,7 +51,7 @@ class ReportService:
             title="Report Submitted Successfully",
             message=f"Your issue '{report.title}' has been logged and sent for AI processing.",
             notification_type=NotificationType.REPORT_UPDATE,
-            report_id=report.id
+            report_id=report.id,
         )
 
         return report
@@ -68,14 +68,14 @@ class ReportService:
         status_filter: ReportStatus | None = None,
         category_filter: IssueCategory | None = None,
         skip: int = 0,
-        limit: int = 20
+        limit: int = 20,
     ) -> Sequence[Report]:
         return await self.report_repo.list_reports(
             citizen_id=citizen_id,
             status=status_filter,
             category=category_filter,
             skip=skip,
-            limit=limit
+            limit=limit,
         )
 
     async def update_report_status(
@@ -83,7 +83,7 @@ class ReportService:
         report_id: UUID,
         new_status: ReportStatus,
         changed_by: str = "system",
-        reason: str | None = None
+        reason: str | None = None,
     ) -> Report:
         report = await self.report_repo.update_status(report_id, new_status, changed_by, reason)
         if not report:
@@ -96,7 +96,7 @@ class ReportService:
                 points=100,
                 reason=RewardReason.REPORT_RESOLVED,
                 description=f"Issue '{report.title}' resolved",
-                report_id=report.id
+                report_id=report.id,
             )
 
         # Notify citizen
@@ -105,7 +105,7 @@ class ReportService:
             title=f"Report Status Updated to {new_status.name.title()}",
             message=f"Your report '{report.title}' status has changed to {new_status.name.lower()}.",
             notification_type=NotificationType.REPORT_UPDATE,
-            report_id=report.id
+            report_id=report.id,
         )
 
         return report

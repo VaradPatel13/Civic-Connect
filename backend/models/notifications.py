@@ -136,33 +136,21 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
 
-    read_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    delivered_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    failed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    retry_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── Deep linking ────────────────────────────────────────────────────
-    deep_link: Mapped[str | None] = mapped_column(
-        String(500), nullable=True
-    )
+    deep_link: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # ── Channel-specific payload ────────────────────────────────────────
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # ── Relationships ──────────────────────────────────────────────────
-    citizen: Mapped[Citizen] = relationship(
-        "Citizen", back_populates="notifications"
-    )
+    citizen: Mapped[Citizen] = relationship("Citizen", back_populates="notifications")
 
     def __repr__(self) -> str:
         return (

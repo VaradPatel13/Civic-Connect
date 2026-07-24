@@ -40,6 +40,7 @@ from backend.models.base import Base, TimestampMixin, UUIDMixin
 # Enum
 # ---------------------------------------------------------------------------
 
+
 class RewardReason(str, Enum):
     """Enumerated reward event codes for point allocation / deduction."""
 
@@ -63,6 +64,7 @@ class RewardReason(str, Enum):
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
+
 
 class RewardTransaction(Base, UUIDMixin, TimestampMixin):
     """Single immutable point transaction.
@@ -120,26 +122,18 @@ class RewardTransaction(Base, UUIDMixin, TimestampMixin):
     )
 
     # ── Reversibility ──────────────────────────────────────────────────
-    reversed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reverse_of_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
 
     # ── Extra context ──────────────────────────────────────────────────
-    extra_metadata: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # ── Relationships ──────────────────────────────────────────────────
-    citizen: Mapped[Citizen] = relationship(
-        "Citizen", back_populates="reward_transactions"
-    )
+    citizen: Mapped[Citizen] = relationship("Citizen", back_populates="reward_transactions")
     # String form avoids import-time circular reference with reports.py
-    report: Mapped[Report | None] = relationship(
-        "Report", back_populates="rewards"
-    )
+    report: Mapped[Report | None] = relationship("Report", back_populates="rewards")
 
     def __repr__(self) -> str:
         sign = "+" if self.points > 0 else ""

@@ -52,6 +52,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode with an async engine."""
+
     async def run_async() -> None:
         connectable = async_engine_from_config(
             config.get_section(config.config_ini_section, {}),

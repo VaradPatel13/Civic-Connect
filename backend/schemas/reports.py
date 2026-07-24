@@ -17,6 +17,7 @@ class PhotoResponse(BaseModel):
     is_authentic: bool | None = None
     display_order: int
 
+
 class StatusLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,6 +26,7 @@ class StatusLogResponse(BaseModel):
     to_status: ReportStatus
     changed_by: str
     reason: str | None = None
+
 
 class AssignmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -35,6 +37,7 @@ class AssignmentResponse(BaseModel):
     assigned_at: datetime
     routing_confidence: float | None = None
     routing_reason: str | None = None
+
 
 class ReportCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=255)
@@ -47,6 +50,7 @@ class ReportCreate(BaseModel):
     language: str = "en"
     photos: list[str] = []  # URLs
 
+
 class ReportUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
@@ -54,6 +58,7 @@ class ReportUpdate(BaseModel):
     urgency: UrgencyLevel | None = None
     status: ReportStatus | None = None
     resolution_notes: str | None = None
+
 
 class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

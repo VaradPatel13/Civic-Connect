@@ -11,6 +11,7 @@ class CategoryResponse(BaseModel):
     issue_category: str
     is_primary: bool
 
+
 class DepartmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,6 +32,7 @@ class DepartmentResponse(BaseModel):
     is_active: bool
     created_at: datetime
     category_links: list[CategoryResponse] = []
+
 
 class WardResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

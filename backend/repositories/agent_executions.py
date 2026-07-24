@@ -18,7 +18,7 @@ class AgentExecutionRepository:
         agent_name: str,
         workflow_id: str | None = None,
         model_used: str | None = None,
-        input_snapshot: dict | None = None
+        input_snapshot: dict | None = None,
     ) -> AgentExecution:
         execution = AgentExecution(
             report_id=report_id,
@@ -27,7 +27,7 @@ class AgentExecutionRepository:
             model_used=model_used,
             status=AgentStatus.RUNNING,
             input_snapshot=input_snapshot,
-            started_at=datetime.now(UTC)
+            started_at=datetime.now(UTC),
         )
         self.session.add(execution)
         await self.session.commit()
@@ -41,7 +41,7 @@ class AgentExecutionRepository:
         confidence: float | None = None,
         output_snapshot: dict | None = None,
         error_snapshot: dict | None = None,
-        execution_ms: int | None = None
+        execution_ms: int | None = None,
     ) -> AgentExecution | None:
         stmt = select(AgentExecution).where(AgentExecution.id == execution_id)
         result = await self.session.execute(stmt)
@@ -63,6 +63,10 @@ class AgentExecutionRepository:
         return execution
 
     async def get_by_report(self, report_id: UUID) -> Sequence[AgentExecution]:
-        stmt = select(AgentExecution).where(AgentExecution.report_id == report_id).order_by(AgentExecution.started_at.desc())
+        stmt = (
+            select(AgentExecution)
+            .where(AgentExecution.report_id == report_id)
+            .order_by(AgentExecution.started_at.desc())
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()

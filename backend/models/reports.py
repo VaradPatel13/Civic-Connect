@@ -45,6 +45,7 @@ from backend.models.base import Base, TimestampMixin, UUIDMixin
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class ReportStatus(str, Enum):
     """Lifecycle states for a civic report."""
 
@@ -97,6 +98,7 @@ class AssignmentStatus(str, Enum):
 # Models
 # ---------------------------------------------------------------------------
 
+
 class Ward(Base, UUIDMixin, TimestampMixin):
     """PMC administrative ward boundary.
 
@@ -107,9 +109,7 @@ class Ward(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "wards"
 
     ward_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    ward_number: Mapped[int] = mapped_column(
-        Integer, nullable=False, unique=True, index=True
-    )
+    ward_number: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, index=True)
     zone: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
 
     jurisdiction_geometry: Mapped[Geometry] = mapped_column(
@@ -125,14 +125,10 @@ class Ward(Base, UUIDMixin, TimestampMixin):
         Boolean, nullable=False, default=True, server_default="true"
     )
 
-    reports: Mapped[list[Report]] = relationship(
-        "Report", back_populates="ward_rel"
-    )
+    reports: Mapped[list[Report]] = relationship("Report", back_populates="ward_rel")
 
     def __repr__(self) -> str:
-        return (
-            f"<Ward {self.ward_number} {self.ward_name} zone={self.zone}>"
-        )
+        return f"<Ward {self.ward_number} {self.ward_name} zone={self.zone}>"
 
 
 class Report(Base, UUIDMixin, TimestampMixin):
@@ -204,12 +200,8 @@ class Report(Base, UUIDMixin, TimestampMixin):
     )
 
     # ── AI metadata ────────────────────────────────────────────────────
-    classification_confidence: Mapped[float | None] = mapped_column(
-        nullable=True
-    )
-    moderation_result: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    classification_confidence: Mapped[float | None] = mapped_column(nullable=True)
+    moderation_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     forensics_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ai_tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
@@ -225,18 +217,12 @@ class Report(Base, UUIDMixin, TimestampMixin):
 
     # ── Resolution ──────────────────────────────────────────────────────
     resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    resolution_images: Mapped[list[str] | None] = mapped_column(
-        JSONB, nullable=True
-    )
-    resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    resolution_images: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ── Relationships ──────────────────────────────────────────────────
     citizen: Mapped[Citizen] = relationship("Citizen", back_populates="reports")
-    ward_rel: Mapped[Ward | None] = relationship(
-        "Ward", back_populates="reports"
-    )
+    ward_rel: Mapped[Ward | None] = relationship("Ward", back_populates="reports")
     photos: Mapped[list[Photo]] = relationship(
         "Photo",
         back_populates="report",
@@ -289,15 +275,9 @@ class Photo(Base, UUIDMixin, TimestampMixin):
     )
 
     # Cloudinary
-    cloudinary_url: Mapped[str] = mapped_column(
-        String(500), nullable=False
-    )
-    public_id: Mapped[str] = mapped_column(
-        String(255), nullable=False, index=True
-    )
-    secure_url: Mapped[str | None] = mapped_column(
-        String(500), nullable=True
-    )
+    cloudinary_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    public_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    secure_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     format: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -305,15 +285,9 @@ class Photo(Base, UUIDMixin, TimestampMixin):
 
     # Forensic
     forensic_score: Mapped[float | None] = mapped_column(nullable=True)
-    forensic_result: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )
-    original_hash: Mapped[str | None] = mapped_column(
-        String(64), nullable=True
-    )
-    is_authentic: Mapped[bool | None] = mapped_column(
-        Boolean, nullable=True
-    )
+    forensic_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    original_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    is_authentic: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Display ordering
     display_order: Mapped[int] = mapped_column(
@@ -361,12 +335,8 @@ class Assignment(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         server_default=func.now(),
     )
-    acknowledged_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Routing metadata (from Department Router agent)
     routing_confidence: Mapped[float | None] = mapped_column(nullable=True)
@@ -379,25 +349,16 @@ class Assignment(Base, UUIDMixin, TimestampMixin):
     escalated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    escalation_reason: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )
+    escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    resolution_notes: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── Relationships ──────────────────────────────────────────────────
     report: Mapped[Report] = relationship("Report", back_populates="assignments")
-    department: Mapped[Department] = relationship(
-        "Department", back_populates="assignments"
-    )
+    department: Mapped[Department] = relationship("Department", back_populates="assignments")
 
     def __repr__(self) -> str:
-        return (
-            f"<Assignment {self.report_id} -> {self.department_id} "
-            f"status={self.status}>"
-        )
+        return f"<Assignment {self.report_id} -> {self.department_id} " f"status={self.status}>"
 
 
 class StatusLog(Base, UUIDMixin, TimestampMixin):
@@ -429,17 +390,12 @@ class StatusLog(Base, UUIDMixin, TimestampMixin):
         String(50), nullable=False, default="system", server_default="system"
     )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    extra_metadata: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # ── Relationships ──────────────────────────────────────────────────
     report: Mapped[Report] = relationship("Report", back_populates="status_logs")
 
     def __repr__(self) -> str:
         if self.from_status:
-            return (
-                f"<StatusLog {self.report_id} "
-                f"{self.from_status} -> {self.to_status}>"
-            )
+            return f"<StatusLog {self.report_id} " f"{self.from_status} -> {self.to_status}>"
         return f"<StatusLog {self.report_id} initial={self.to_status}>"

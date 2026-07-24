@@ -19,7 +19,9 @@ class DepartmentService:
     async def get_department(self, dept_id: UUID) -> Department:
         dept = await self.dept_repo.get_by_id(dept_id)
         if not dept:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Department not found"
+            )
         return dept
 
     async def list_wards(self) -> Sequence[Ward]:

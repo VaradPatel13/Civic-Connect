@@ -23,8 +23,5 @@ class RewardService:
         tx_responses = [RewardTransactionResponse.model_validate(tx) for tx in transactions]
 
         return RewardBalanceResponse(
-            citizen_id=citizen_id,
-            total_points=balance,
-            tier=tier,
-            transactions=tx_responses
+            citizen_id=citizen_id, total_points=balance, tier=tier, transactions=tx_responses
         )

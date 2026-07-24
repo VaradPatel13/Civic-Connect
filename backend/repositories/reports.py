@@ -30,7 +30,7 @@ class ReportRepository:
         latitude: float | None = None,
         longitude: float | None = None,
         address: str | None = None,
-        language: str = "en"
+        language: str = "en",
     ) -> Report:
         location = None
         if latitude is not None and longitude is not None:
@@ -58,7 +58,7 @@ class ReportRepository:
             from_status=None,
             to_status=ReportStatus.PENDING,
             changed_by="system",
-            reason="Report submitted by citizen"
+            reason="Report submitted by citizen",
         )
         self.session.add(log)
         await self.session.commit()
@@ -71,7 +71,7 @@ class ReportRepository:
             .options(
                 selectinload(Report.photos),
                 selectinload(Report.status_logs),
-                selectinload(Report.assignments)
+                selectinload(Report.assignments),
             )
             .where(Report.id == report_id)
         )
@@ -84,12 +84,12 @@ class ReportRepository:
         status: ReportStatus | None = None,
         category: IssueCategory | None = None,
         skip: int = 0,
-        limit: int = 20
+        limit: int = 20,
     ) -> Sequence[Report]:
         stmt = select(Report).options(
             selectinload(Report.photos),
             selectinload(Report.status_logs),
-            selectinload(Report.assignments)
+            selectinload(Report.assignments),
         )
         if citizen_id:
             stmt = stmt.where(Report.citizen_id == citizen_id)
@@ -107,7 +107,7 @@ class ReportRepository:
         report_id: UUID,
         new_status: ReportStatus,
         changed_by: str = "system",
-        reason: str | None = None
+        reason: str | None = None,
     ) -> Report | None:
         report = await self.get_by_id(report_id)
         if not report:
@@ -121,7 +121,7 @@ class ReportRepository:
             from_status=old_status,
             to_status=new_status,
             changed_by=changed_by,
-            reason=reason
+            reason=reason,
         )
         self.session.add(log)
         await self.session.commit()
@@ -130,9 +130,7 @@ class ReportRepository:
 
     async def add_photo(self, report_id: UUID, url: str, public_id: str = "") -> Photo:
         photo = Photo(
-            report_id=report_id,
-            cloudinary_url=url,
-            public_id=public_id or url.split("/")[-1]
+            report_id=report_id, cloudinary_url=url, public_id=public_id or url.split("/")[-1]
         )
         self.session.add(photo)
         await self.session.commit()

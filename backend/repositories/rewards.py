@@ -13,9 +13,8 @@ class RewardRepository:
         self.session = session
 
     async def get_user_balance(self, citizen_id: UUID) -> int:
-        stmt = (
-            select(func.coalesce(func.sum(RewardTransaction.points), 0))
-            .where(RewardTransaction.citizen_id == citizen_id)
+        stmt = select(func.coalesce(func.sum(RewardTransaction.points), 0)).where(
+            RewardTransaction.citizen_id == citizen_id
         )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
@@ -27,7 +26,7 @@ class RewardRepository:
         reason: RewardReason,
         description: str | None = None,
         report_id: UUID | None = None,
-        awarded_by: str = "system"
+        awarded_by: str = "system",
     ) -> RewardTransaction:
         current_balance = await self.get_user_balance(citizen_id)
         new_balance = current_balance + points
@@ -41,14 +40,16 @@ class RewardRepository:
             previous_balance=current_balance,
             new_balance=new_balance,
             awarded_by=awarded_by,
-            is_automated=True
+            is_automated=True,
         )
         self.session.add(tx)
         await self.session.commit()
         await self.session.refresh(tx)
         return tx
 
-    async def list_transactions(self, citizen_id: UUID, skip: int = 0, limit: int = 50) -> Sequence[RewardTransaction]:
+    async def list_transactions(
+        self, citizen_id: UUID, skip: int = 0, limit: int = 50
+    ) -> Sequence[RewardTransaction]:
         stmt = (
             select(RewardTransaction)
             .where(RewardTransaction.citizen_id == citizen_id)

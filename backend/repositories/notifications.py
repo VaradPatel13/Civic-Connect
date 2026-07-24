@@ -29,7 +29,7 @@ class NotificationRepository:
         channel: NotificationChannel = NotificationChannel.IN_APP,
         report_id: UUID | None = None,
         deep_link: str | None = None,
-        payload: dict | None = None
+        payload: dict | None = None,
     ) -> Notification:
         notification = Notification(
             citizen_id=citizen_id,
@@ -42,14 +42,16 @@ class NotificationRepository:
             delivery_status=DeliveryStatus.DELIVERED,
             delivered_at=datetime.now(UTC),
             deep_link=deep_link,
-            payload=payload
+            payload=payload,
         )
         self.session.add(notification)
         await self.session.commit()
         await self.session.refresh(notification)
         return notification
 
-    async def list_for_user(self, citizen_id: UUID, skip: int = 0, limit: int = 50) -> Sequence[Notification]:
+    async def list_for_user(
+        self, citizen_id: UUID, skip: int = 0, limit: int = 50
+    ) -> Sequence[Notification]:
         stmt = (
             select(Notification)
             .where(Notification.citizen_id == citizen_id)
@@ -65,10 +67,7 @@ class NotificationRepository:
             update(Notification)
             .where(Notification.citizen_id == citizen_id)
             .where(Notification.id.in_(notification_ids))
-            .values(
-                delivery_status=DeliveryStatus.READ,
-                read_at=datetime.now(UTC)
-            )
+            .values(delivery_status=DeliveryStatus.READ, read_at=datetime.now(UTC))
         )
         result = await self.session.execute(stmt)
         await self.session.commit()

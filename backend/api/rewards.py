@@ -9,10 +9,10 @@ from backend.services.reward_service import RewardService
 
 router = APIRouter(prefix="/rewards", tags=["Rewards"])
 
+
 @router.get("/summary", response_model=RewardBalanceResponse)
 async def get_reward_summary(
-    current_user: Citizen = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: Citizen = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     service = RewardService(db)
     return await service.get_user_summary(citizen_id=current_user.id)

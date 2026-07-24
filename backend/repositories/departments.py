@@ -14,17 +14,29 @@ class DepartmentRepository:
         self.session = session
 
     async def list_departments(self) -> Sequence[Department]:
-        stmt = select(Department).options(selectinload(Department.category_links)).where(Department.is_active)
+        stmt = (
+            select(Department)
+            .options(selectinload(Department.category_links))
+            .where(Department.is_active)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
     async def get_by_id(self, dept_id: UUID) -> Department | None:
-        stmt = select(Department).options(selectinload(Department.category_links)).where(Department.id == dept_id)
+        stmt = (
+            select(Department)
+            .options(selectinload(Department.category_links))
+            .where(Department.id == dept_id)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_code(self, code: str) -> Department | None:
-        stmt = select(Department).options(selectinload(Department.category_links)).where(Department.code == code)
+        stmt = (
+            select(Department)
+            .options(selectinload(Department.category_links))
+            .where(Department.code == code)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

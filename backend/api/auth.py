@@ -62,7 +62,9 @@ async def register(
         expires_at=datetime.now(UTC) + timedelta(minutes=10),
     )
 
-    access_token = service.create_access_token(str(user.id), str(user.role.value if hasattr(user.role, 'value') else user.role))
+    access_token = service.create_access_token(
+        str(user.id), str(user.role.value if hasattr(user.role, "value") else user.role)
+    )
     refresh_token = service.create_refresh_token(str(user.id))
 
     await user_repo.create_session(

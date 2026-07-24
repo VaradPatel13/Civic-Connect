@@ -30,5 +30,6 @@ class NotificationResponse(BaseModel):
     payload: dict[str, Any] | None = None
     created_at: datetime
 
+
 class NotificationMarkRead(BaseModel):
     notification_ids: list[UUID]

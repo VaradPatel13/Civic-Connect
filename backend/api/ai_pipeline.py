@@ -10,11 +10,12 @@ from backend.services.ai_pipeline_service import AIPipelineService
 
 router = APIRouter(prefix="/ai", tags=["AI Pipeline"])
 
+
 @router.post("/process/{report_id}")
 async def process_report(
     report_id: UUID,
     current_user: Citizen = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     service = AIPipelineService(db)
     result = await service.process_report(report_id)

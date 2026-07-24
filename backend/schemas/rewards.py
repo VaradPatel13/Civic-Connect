@@ -21,6 +21,7 @@ class RewardTransactionResponse(BaseModel):
     is_automated: bool
     created_at: datetime
 
+
 class RewardBalanceResponse(BaseModel):
     citizen_id: UUID
     total_points: int

@@ -59,9 +59,7 @@ class UserRepository:
 
     async def revoke_session(self, session_id: uuid.UUID) -> None:
         await self.db.execute(
-            update(Session)
-            .where(Session.id == session_id)
-            .values(revoked_at=func.now())
+            update(Session).where(Session.id == session_id).values(revoked_at=func.now())
         )
         await self.db.commit()
 

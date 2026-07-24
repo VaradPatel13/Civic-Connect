@@ -64,20 +64,12 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
 
     # Optional linkage to a common workflow run (all agents in one
     # pipeline execution share the same workflow_id).
-    workflow_id: Mapped[str | None] = mapped_column(
-        String(36), nullable=True, index=True
-    )
+    workflow_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     # ── Agent identity ─────────────────────────────────────────────────
-    agent_name: Mapped[str] = mapped_column(
-        String(100), nullable=False, index=True
-    )
-    model_used: Mapped[str | None] = mapped_column(
-        String(100), nullable=True
-    )
-    model_version: Mapped[str | None] = mapped_column(
-        String(50), nullable=True
-    )
+    agent_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    model_used: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # ── Timing ─────────────────────────────────────────────────────────
     started_at: Mapped[datetime] = mapped_column(
@@ -85,12 +77,8 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         server_default=func.now(),
     )
-    ended_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    execution_ms: Mapped[int | None] = mapped_column(
-        Integer, nullable=True
-    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Outcome ────────────────────────────────────────────────────────
     status: Mapped[AgentStatus] = mapped_column(
@@ -103,28 +91,18 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
     confidence: Mapped[float | None] = mapped_column(nullable=True)
 
     # ── Snapshots (JSONB for flexibility) ──────────────────────────────
-    input_snapshot: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )
-    output_snapshot: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )
-    error_snapshot: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    input_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    output_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # ── Retry tracking ─────────────────────────────────────────────────
-    retry_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
-    )
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_final_attempt: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
 
     # ── Relationships ──────────────────────────────────────────────────
-    report: Mapped[Report] = relationship(
-        "Report", back_populates="agent_executions"
-    )
+    report: Mapped[Report] = relationship("Report", back_populates="agent_executions")
 
     def __repr__(self) -> str:
         return (

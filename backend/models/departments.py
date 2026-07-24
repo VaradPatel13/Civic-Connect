@@ -60,37 +60,21 @@ class Department(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "departments"
 
-    code: Mapped[str] = mapped_column(
-        String(10), unique=True, nullable=False, index=True
-    )
+    code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    category: Mapped[str] = mapped_column(
-        String(100), nullable=False, index=True
-    )
+    category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
 
     # ── Contact ─────────────────────────────────────────────────────────
-    contact_email: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
-    contact_phone: Mapped[str | None] = mapped_column(
-        String(20), nullable=True
-    )
-    operating_hours: Mapped[str | None] = mapped_column(
-        String(100), nullable=True
-    )
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    operating_hours: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # ── SLA targets ─────────────────────────────────────────────────────
     sla_low_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
-    sla_medium_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=3
-    )
-    sla_high_hours: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=24
-    )
-    sla_critical_hours: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=4
-    )
+    sla_medium_days: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    sla_high_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
+    sla_critical_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
 
     # ── Spatial ─────────────────────────────────────────────────────────
     jurisdiction_geometry: Mapped[Geometry | None] = mapped_column(
@@ -106,26 +90,20 @@ class Department(Base, UUIDMixin, TimestampMixin):
     active_report_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
-    weekly_capacity: Mapped[int | None] = mapped_column(
-        Integer, nullable=True
-    )
+    weekly_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
 
     # ── Relationships ──────────────────────────────────────────────────
-    assignments: Mapped[list[Assignment]] = relationship(
-        "Assignment", back_populates="department"
-    )
+    assignments: Mapped[list[Assignment]] = relationship("Assignment", back_populates="department")
     category_links: Mapped[list[DepartmentCategory]] = relationship(
         "DepartmentCategory", back_populates="department"
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<Department {self.code} {self.name} active={self.is_active}>"
-        )
+        return f"<Department {self.code} {self.name} active={self.is_active}>"
 
 
 class DepartmentCategory(Base, UUIDMixin, TimestampMixin):
@@ -144,9 +122,7 @@ class DepartmentCategory(Base, UUIDMixin, TimestampMixin):
         ),
     )
 
-    issue_category: Mapped[str] = mapped_column(
-        String(50), nullable=False, index=True
-    )
+    issue_category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     department_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("departments.id", ondelete="CASCADE"),
@@ -157,12 +133,7 @@ class DepartmentCategory(Base, UUIDMixin, TimestampMixin):
     )
 
     # ── Relationships ──────────────────────────────────────────────────
-    department: Mapped[Department] = relationship(
-        "Department", back_populates="category_links"
-    )
+    department: Mapped[Department] = relationship("Department", back_populates="category_links")
 
     def __repr__(self) -> str:
-        return (
-            f"<DepartmentCategory {self.issue_category} "
-            f"-> {self.department_id}>"
-        )
+        return f"<DepartmentCategory {self.issue_category} " f"-> {self.department_id}>"
