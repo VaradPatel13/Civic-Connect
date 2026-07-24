@@ -6,7 +6,6 @@ on:
     paths-ignore:
       - '**.md'
       - '**.txt'
-      - '.github/workflows/**'
   pull_request:
     branches: [main, develop]
 
@@ -78,6 +77,9 @@ jobs:
 
       - name: Set up database URL
         run: echo "DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/civicconnect_test" >> $GITHUB_ENV
+
+      - name: Run database migrations
+        run: alembic upgrade head
 
       - name: Run unit tests
         run: pytest backend/tests/ -v --cov=backend --cov-report=xml --cov-report=term-missing
