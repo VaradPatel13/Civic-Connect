@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional, TypedDict
-from sqlalchemy.orm import Session
+from typing import Any, TypedDict
+
 from sqlalchemy import text
 
 from backend.agents.state import GeoValidationResult, PipelineSharedState
@@ -30,7 +30,7 @@ class PMCBoundaryDict(TypedDict):
 
 
 # Pune Municipal Corporation (PMC) ward boundary polygon lookups
-PUNE_PMC_BOUNDARIES: List[PMCBoundaryDict] = [
+PUNE_PMC_BOUNDARIES: list[PMCBoundaryDict] = [
     {"ward_id": "WARD_01", "ward_name": "Aundh-Baner", "zone_name": "Zone 1", "min_lat": 18.54, "max_lat": 18.58, "min_lon": 73.78, "max_lon": 73.83},
     {"ward_id": "WARD_02", "ward_name": "Kothrud-Bavdhan", "zone_name": "Zone 1", "min_lat": 18.49, "max_lat": 18.53, "min_lon": 73.79, "max_lon": 73.83},
     {"ward_id": "WARD_03", "ward_name": "Shivajinagar-Ghole Road", "zone_name": "Zone 2", "min_lat": 18.51, "max_lat": 18.54, "min_lon": 73.83, "max_lon": 73.86},
@@ -42,14 +42,14 @@ PUNE_PMC_BOUNDARIES: List[PMCBoundaryDict] = [
 class GeoValidationAgent:
     """Agent that performs spatial boundary matching over report coordinates."""
 
-    def __init__(self, db_session_factory: Optional[Any] = None) -> None:
+    def __init__(self, db_session_factory: Any | None = None) -> None:
         self.db_session_factory = db_session_factory
 
-    def process(self, state: PipelineSharedState) -> Dict[str, Any]:
+    def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Geo Validation node logic for LangGraph workflow."""
         start_time = time.time()
         raw_payload = state.get("raw_payload", {})
-        
+
         latitude = raw_payload.get("latitude")
         longitude = raw_payload.get("longitude")
 
@@ -77,10 +77,10 @@ class GeoValidationAgent:
         result = self._query_pmc_bounding_box(lat, lon)
         execution_ms = (time.time() - start_time) * 1000.0
         logger.info(f"[GeoValidator] Geo-validation completed in {execution_ms:.2f}ms. Matched: {result.get('boundary_matched')}")
-        
+
         return {"agent_outputs": {"geo_validation": result}}
 
-    def _query_postgis_ward(self, lat: float, lon: float) -> Optional[GeoValidationResult]:
+    def _query_postgis_ward(self, lat: float, lon: float) -> GeoValidationResult | None:
         """Queries PostGIS database using ST_Covers over jurisdiction geometry."""
         factory = self.db_session_factory
         if factory is None:
@@ -88,9 +88,9 @@ class GeoValidationAgent:
 
         try:
             query = text("""
-                SELECT code, name, category 
-                FROM departments 
-                WHERE jurisdiction_geometry IS NOT NULL 
+                SELECT code, name, category
+                FROM departments
+                WHERE jurisdiction_geometry IS NOT NULL
                 AND ST_Covers(jurisdiction_geometry, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
                 LIMIT 1;
             """)

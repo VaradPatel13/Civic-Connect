@@ -14,7 +14,8 @@ This module defines the typed shared state and isolation boundaries for all 9 ag
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any
+
 try:
     from typing_extensions import TypedDict
 except ImportError:
@@ -22,15 +23,15 @@ except ImportError:
 
 
 def merge_agent_outputs(
-    left: Optional[Dict[str, Any]], right: Optional[Dict[str, Any]]
-) -> Dict[str, Any]:
+    left: dict[str, Any] | None, right: dict[str, Any] | None
+) -> dict[str, Any]:
     """Shallow-merges agent outputs dictionary to prevent parallel race overwrites.
-    
+
     When parallel execution nodes (Forensics, Classifier, Geo-Val, Moderator) return
     state updates simultaneously in LangGraph, this reducer merges dictionary keys
     without destroying existing keys written by faster concurrent nodes.
     """
-    merged: Dict[str, Any] = dict(left) if left else {}
+    merged: dict[str, Any] = dict(left) if left else {}
     if right:
         merged.update(right)
     return merged
@@ -41,28 +42,28 @@ class ForensicsResult(TypedDict, total=False):
     confidence: float
     reason: str
     duplicate_detected: bool
-    matching_report_id: Optional[str]
+    matching_report_id: str | None
 
 
 class ClassificationResult(TypedDict, total=False):
     category: str
     urgency: str  # low, medium, high, critical
-    tags: List[str]
+    tags: list[str]
     confidence: float
     fallback_used: bool
 
 
 class GeoValidationResult(TypedDict, total=False):
-    ward_id: Optional[str]
-    ward_name: Optional[str]
-    zone_name: Optional[str]
+    ward_id: str | None
+    ward_name: str | None
+    zone_name: str | None
     boundary_matched: bool
     confidence: float
 
 
 class ModerationResult(TypedDict, total=False):
     clean: bool
-    flags: List[str]
+    flags: list[str]
     toxicity_score: float
     confidence: float
     requires_human_review: bool
@@ -83,24 +84,24 @@ class RoutingResult(TypedDict, total=False):
 
 
 class AgentOutputs(TypedDict, total=False):
-    supervisor: Optional[Dict[str, Any]]
-    forensics: Optional[ForensicsResult]
-    classification: Optional[ClassificationResult]
-    geo_validation: Optional[GeoValidationResult]
-    moderation: Optional[ModerationResult]
-    enhancement: Optional[EnhancementResult]
-    routing: Optional[RoutingResult]
-    notification: Optional[Dict[str, Any]]
+    supervisor: dict[str, Any] | None
+    forensics: ForensicsResult | None
+    classification: ClassificationResult | None
+    geo_validation: GeoValidationResult | None
+    moderation: ModerationResult | None
+    enhancement: EnhancementResult | None
+    routing: RoutingResult | None
+    notification: dict[str, Any] | None
 
 
 class PipelineSharedState(TypedDict, total=False):
     report_id: str
     trace_id: str
     citizen_id: str
-    raw_payload: Dict[str, Any]
+    raw_payload: dict[str, Any]
     sanitised_text: str
-    pii_mask_map: Dict[str, str]
-    agent_outputs: Annotated[Dict[str, Any], merge_agent_outputs]
+    pii_mask_map: dict[str, str]
+    agent_outputs: Annotated[dict[str, Any], merge_agent_outputs]
     pipeline_status: str  # PENDING, PROCESSING, COMPLETED, INTERRUPTED, FAILED
-    error: Optional[str]
-    metadata: Dict[str, Any]
+    error: str | None
+    metadata: dict[str, Any]

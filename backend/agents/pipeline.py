@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 
 # ── Supervisor Node ─────────────────────────────────────────────────────────
-def supervisor_node(state: PipelineSharedState) -> Dict[str, Any]:
+def supervisor_node(state: PipelineSharedState) -> dict[str, Any]:
     """Validation Supervisor node: initializes trace, sanitizes text, formats payload."""
     report_id = state.get("report_id") or str(uuid.uuid4())
     trace_id = state.get("trace_id") or str(uuid.uuid4())
     raw_payload = state.get("raw_payload", {})
-    
+
     raw_text_val = raw_payload.get("description") or state.get("raw_text") or ""
     sanitised_text: str = str(raw_text_val).strip()
 
@@ -57,11 +57,11 @@ def supervisor_node(state: PipelineSharedState) -> Dict[str, Any]:
 
 # ── Agent Node Wrapper Instances ───────────────────────────────────────────
 def create_civic_pipeline_graph(
-    ai_engine: Optional[UnifiedAIEngine] = None,
-    db_session_factory: Optional[Any] = None,
+    ai_engine: UnifiedAIEngine | None = None,
+    db_session_factory: Any | None = None,
 ) -> Any:
     """Compiles the LangGraph StateGraph workflow with per-agent specialized model bindings."""
-    
+
     provider = settings.ai_provider.lower()
 
     # Per-Agent Specialized Model Engine Instances (NVIDIA NIM / OpenRouter / OpenAI)

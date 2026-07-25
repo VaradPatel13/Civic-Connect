@@ -11,7 +11,8 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from backend.agents.state import ClassificationResult, PipelineSharedState
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 class ClassifierPydanticOutput(BaseModel):
     category: str = Field(description="PMC department category code: ROADS, WATER, DRAIN, ELEC, HEALTH, SANIT, FIRE, BUILD, TRAFF, PARKS, ADMIN")
     urgency: str = Field(description="Urgency level: low, medium, high, critical")
-    tags: List[str] = Field(default_factory=list, description="Keywords summarizing the issue")
+    tags: list[str] = Field(default_factory=list, description="Keywords summarizing the issue")
     confidence: float = Field(description="Model confidence score between 0.0 and 1.0")
 
 
@@ -45,10 +46,10 @@ CATEGORY_REGEX_RULES = [
 class ClassificationAgent:
     """Agent that classifies civic issue category and urgency."""
 
-    def __init__(self, ai_engine: Optional[UnifiedAIEngine] = None) -> None:
+    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
         self.ai_engine = ai_engine or UnifiedAIEngine(provider="openrouter")
 
-    def process(self, state: PipelineSharedState) -> Dict[str, Any]:
+    def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Issue Classifier node logic for LangGraph workflow."""
         start_time = time.time()
         raw_text_val = state.get("sanitised_text") or state.get("raw_text") or ""

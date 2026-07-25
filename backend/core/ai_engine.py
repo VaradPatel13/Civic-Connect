@@ -10,10 +10,10 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, Optional, Type, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from backend.core.config import settings
 
@@ -39,8 +39,8 @@ class BaseAIEngine:
     def generate_structured(
         self,
         prompt: str,
-        response_model: Type[T],
-        system_prompt: Optional[str] = None,
+        response_model: type[T],
+        system_prompt: str | None = None,
         temperature: float = 0.2,
     ) -> tuple[T, float, int, str]:
         """Generates structured Pydantic response.
@@ -56,10 +56,10 @@ class UnifiedAIEngine(BaseAIEngine):
 
     def __init__(
         self,
-        provider: Optional[str] = None,  # "openrouter", "nvidia_nim", "openai"
-        model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        provider: str | None = None,  # "openrouter", "nvidia_nim", "openai"
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None:
         self.provider = (provider or settings.ai_provider).lower()
         self.api_key = api_key or self._resolve_api_key()
@@ -99,6 +99,7 @@ class UnifiedAIEngine(BaseAIEngine):
         return "gpt-4o-mini"
 
     @retry(
+        retry=retry_if_not_exception_type((RuntimeError, ValueError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=6),
         reraise=True,
@@ -106,8 +107,8 @@ class UnifiedAIEngine(BaseAIEngine):
     def generate_structured(
         self,
         prompt: str,
-        response_model: Type[T],
-        system_prompt: Optional[str] = None,
+        response_model: type[T],
+        system_prompt: str | None = None,
         temperature: float = 0.2,
     ) -> tuple[T, float, int, str]:
         start_time = time.time()
@@ -128,12 +129,12 @@ class UnifiedAIEngine(BaseAIEngine):
         )
         messages[-1]["content"] += json_instruction
 
-        extra_headers: Dict[str, str] = {}
+        extra_headers: dict[str, str] = {}
         if self.provider == "openrouter":
             extra_headers["HTTP-Referer"] = "https://civicconnect.org"
             extra_headers["X-Title"] = "CivicConnect AI Engine"
 
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "model": self.model_name,
             "messages": messages,
             "temperature": temperature,
@@ -160,7 +161,7 @@ class UnifiedAIEngine(BaseAIEngine):
 
         return parsed_model, execution_ms, total_tokens, self.model_name
 
-    def _parse_json_robust(self, raw_text: str) -> Dict[str, Any]:
+    def _parse_json_robust(self, raw_text: str) -> dict[str, Any]:
         """Attempts standard json.loads(), falling back to zero-token json_repair."""
         clean_text = raw_text.strip()
 
@@ -184,4 +185,4 @@ class UnifiedAIEngine(BaseAIEngine):
                         return repaired
                 except Exception as repair_err:
                     logger.error(f"[AIEngine] json_repair failed: {repair_err}")
-            raise ValueError(f"Could not parse valid JSON from AI model response: {clean_text[:200]}")
+            raise ValueError(f"Could not parse valid JSON from AI model response: {clean_text[:200]}") from err

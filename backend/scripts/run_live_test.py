@@ -7,7 +7,6 @@ Usage:
 
 import json
 import logging
-import os
 import sys
 import uuid
 
@@ -51,7 +50,7 @@ def run_live_triage(
         },
     }
 
-    print(f"\n[INGESTED REPORT]")
+    print("\n[INGESTED REPORT]")
     print(f"  * ID:          {report_id}")
     print(f"  * Description: \"{description}\"")
     print(f"  * GPS Coords:  ({latitude}, {longitude})")

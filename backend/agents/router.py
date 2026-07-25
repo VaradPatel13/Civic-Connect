@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
-from pydantic import BaseModel, Field
+from typing import Any
 
 from backend.agents.state import PipelineSharedState, RoutingResult
 from backend.core.ai_engine import UnifiedAIEngine
@@ -46,10 +45,10 @@ PMC_DEPT_CODES = {
 class RouterAgent:
     """Agent that routes reports to primary PMC departments and sets SLA targets."""
 
-    def __init__(self, ai_engine: Optional[UnifiedAIEngine] = None) -> None:
+    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
         self.ai_engine = ai_engine
 
-    def process(self, state: PipelineSharedState) -> Dict[str, Any]:
+    def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Department Router node logic for LangGraph workflow."""
         start_time = time.time()
         agent_outputs = state.get("agent_outputs", {})
@@ -62,7 +61,7 @@ class RouterAgent:
         dept_code, dept_name = dept_info
 
         sla_hours = PMC_SLA_MAP.get(urgency, 72)
-        
+
         # Calculate priority score (1 to 100)
         priority_base = {"critical": 90, "high": 70, "medium": 40, "low": 20}.get(urgency, 40)
         geo_val = agent_outputs.get("geo_validation", {})

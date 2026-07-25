@@ -8,8 +8,7 @@ import asyncio
 import logging
 import queue
 import time
-from typing import Any, Dict, List, Optional
-from sqlalchemy.orm import Session
+from typing import Any
 
 from backend.models.agent_executions import AgentExecution
 
@@ -25,14 +24,14 @@ class AsyncAuditBatcher:
         max_batch_size: int = 100,
         flush_interval_sec: float = 3.0,
     ) -> None:
-        self.log_queue: queue.Queue[Dict[str, Any]] = queue.Queue()
+        self.log_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.session_factory = db_session_factory
         self.max_batch_size = max_batch_size
         self.flush_interval_sec = flush_interval_sec
         self.last_flush = time.time()
-        self._flush_task: Optional[asyncio.Task[None]] = None
+        self._flush_task: asyncio.Task[None] | None = None
 
-    def enqueue_audit(self, audit_data: Dict[str, Any]) -> None:
+    def enqueue_audit(self, audit_data: dict[str, Any]) -> None:
         """Enqueues an agent audit dictionary for background bulk flushing."""
         self.log_queue.put(audit_data)
         if self.log_queue.qsize() >= self.max_batch_size:
@@ -43,7 +42,7 @@ class AsyncAuditBatcher:
         if self.log_queue.empty():
             return 0
 
-        records_to_insert: List[AgentExecution] = []
+        records_to_insert: list[AgentExecution] = []
         while not self.log_queue.empty() and len(records_to_insert) < self.max_batch_size:
             try:
                 log_data = self.log_queue.get_nowait()
@@ -67,7 +66,7 @@ class AsyncAuditBatcher:
         self.last_flush = time.time()
         return flushed_count
 
-    def _fallback_single_inserts(self, records: List[AgentExecution]) -> None:
+    def _fallback_single_inserts(self, records: list[AgentExecution]) -> None:
         """Individual record fallback insertion if bulk save fails."""
         for rec in records:
             try:

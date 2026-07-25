@@ -11,7 +11,8 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from backend.agents.state import ModerationResult, PipelineSharedState
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class ModeratorPydanticOutput(BaseModel):
     clean: bool = Field(description="True if content passes moderation guidelines")
-    flags: List[str] = Field(default_factory=list, description="Policy violation flags (e.g., toxicity, profanity, prompt_injection)")
+    flags: list[str] = Field(default_factory=list, description="Policy violation flags (e.g., toxicity, profanity, prompt_injection)")
     toxicity_score: float = Field(description="Toxicity score between 0.0 and 1.0")
     confidence: float = Field(description="Moderation confidence score between 0.0 and 1.0")
     requires_human_review: bool = Field(description="True if human admin review is required")
@@ -43,10 +44,10 @@ INJECTION_KEYWORDS = [
 class ModerationAgent:
     """Agent that screens citizen content for safety and policy compliance."""
 
-    def __init__(self, ai_engine: Optional[UnifiedAIEngine] = None) -> None:
+    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
         self.ai_engine = ai_engine or UnifiedAIEngine(provider="openrouter")
 
-    def process(self, state: PipelineSharedState) -> Dict[str, Any]:
+    def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Content Moderator node logic for LangGraph workflow."""
         start_time = time.time()
         text_to_screen = state.get("sanitised_text") or state.get("raw_text", "")

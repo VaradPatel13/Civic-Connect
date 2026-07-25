@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from backend.agents.state import ForensicsResult, PipelineSharedState
@@ -29,10 +30,10 @@ class ForensicsPydanticOutput(BaseModel):
 class ForensicsAgent:
     """Agent that performs image authenticity and duplicate detection."""
 
-    def __init__(self, ai_engine: Optional[UnifiedAIEngine] = None) -> None:
+    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
         self.ai_engine = ai_engine or UnifiedAIEngine(provider="openrouter")
 
-    def process(self, state: PipelineSharedState) -> Dict[str, Any]:
+    def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Image Forensics node logic for LangGraph workflow."""
         start_time = time.time()
         raw_payload = state.get("raw_payload", {})

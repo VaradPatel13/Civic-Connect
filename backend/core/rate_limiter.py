@@ -7,7 +7,7 @@ and async event loops to protect LLM provider API token/concurrency limits.
 import asyncio
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 try:
     import redis
@@ -50,9 +50,9 @@ end
 class RedisTokenBucketLimiter:
     """Atomic Redis Token Bucket Rate Limiter with Async Retry Queue."""
 
-    def __init__(self, redis_client: Optional[Any] = None) -> None:
+    def __init__(self, redis_client: Any | None = None) -> None:
         self.redis = redis_client
-        self.script_hash: Optional[str] = None
+        self.script_hash: str | None = None
         self._local_tokens: float = 100.0
         self._local_last_updated: float = time.time()
 
@@ -71,7 +71,7 @@ class RedisTokenBucketLimiter:
         tokens_requested: int = 1,
     ) -> tuple[bool, float]:
         """Synchronously check and consume tokens.
-        
+
         Returns:
             (allowed: bool, wait_seconds: float)
         """
@@ -120,7 +120,7 @@ class RedisTokenBucketLimiter:
         max_wait_seconds: float = 15.0,
     ) -> bool:
         """Asynchronously waits in queue until rate limiter tokens become available.
-        
+
         If tokens are exhausted, the request sleeps dynamically according to calculated
         refill time before retrying, giving up if max_wait_seconds is exceeded.
         """

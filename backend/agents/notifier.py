@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any
 
 from backend.agents.state import PipelineSharedState
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class NotificationAgent:
     """Agent that formats notifications and manages citizen reward points."""
 
-    def process(self, state: PipelineSharedState) -> Dict[str, Any]:
+    def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Notifier node logic for LangGraph workflow."""
         start_time = time.time()
         report_id = state.get("report_id", "UNKNOWN")

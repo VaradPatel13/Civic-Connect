@@ -8,7 +8,6 @@ Tests:
 5. Full LangGraph state graph compilation & end-to-end execution
 """
 
-import pytest
 from backend.agents.classifier import ClassificationAgent
 from backend.agents.geo_validator import GeoValidationAgent
 from backend.agents.pipeline import create_civic_pipeline_graph
@@ -21,7 +20,7 @@ def test_state_reducer_shallow_merge():
     left = {"forensics": {"authentic": True}}
     right = {"classification": {"category": "ROADS"}}
     merged = merge_agent_outputs(left, right)
-    
+
     assert "forensics" in merged
     assert "classification" in merged
     assert merged["forensics"]["authentic"] is True
@@ -32,7 +31,7 @@ def test_rate_limiter_in_memory_fallback():
     """Verify rate limiter allows requests when tokens are available."""
     limiter = RedisTokenBucketLimiter(redis_client=None)
     allowed, wait_sec = limiter.consume("test_key", max_tokens=10, refill_rate=1.0)
-    
+
     assert allowed is True
     assert wait_sec == 0.0
 
@@ -62,10 +61,32 @@ def test_classifier_regex_fallback():
     assert fallback_res["fallback_used"] is True
 
 
+class MockAIEngine:
+    """Fast, deterministic mock engine for AI pipeline unit tests."""
+    def generate_structured(self, prompt, response_model, system_prompt=None, temperature=0.2):
+        sys_str = system_prompt or ""
+        if "Forensics" in sys_str:
+            data = {"authentic": True, "confidence": 0.99, "reason": "Mock forensics pass", "duplicate_detected": False}
+        elif "Classifier" in sys_str:
+            data = {"category": "ROADS", "priority": "P2", "urgency": "high", "department_code": "PMC_DEPT_ROADS", "confidence": 0.95, "summary": "Pothole report"}
+        elif "Moderation" in sys_str:
+            data = {"approved": True, "toxicity_score": 0.0, "flagged_reason": "", "pii_found": False, "sanitized_text": prompt}
+        elif "Enhancement" in sys_str:
+            data = {"enhanced_title": "Pothole Issue", "enhanced_description": prompt, "key_tags": ["pothole", "roads"]}
+        elif "Router" in sys_str:
+            data = {"department_code": "PMC_DEPT_ROADS", "ward_name": "Aundh-Baner", "estimated_sla_hours": 48, "routing_reason": "Road issue in Aundh"}
+        else:
+            data = {}
+
+        obj = response_model.model_validate(data)
+        return obj, 1.0, 10, "mock-model"
+
+
 def test_full_pipeline_graph_execution():
     """Verify full end-to-end execution of compiled LangGraph workflow."""
-    graph = create_civic_pipeline_graph()
-    
+    mock_engine = MockAIEngine()
+    graph = create_civic_pipeline_graph(ai_engine=mock_engine)
+
     initial_state = {
         "report_id": "report-12345",
         "trace_id": "trace-67890",
@@ -80,7 +101,7 @@ def test_full_pipeline_graph_execution():
 
     assert final_state["report_id"] == "report-12345"
     assert final_state["pipeline_status"] == "PROCESSING"
-    
+
     outputs = final_state["agent_outputs"]
     assert "geo_validation" in outputs
     assert "classification" in outputs

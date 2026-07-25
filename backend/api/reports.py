@@ -1,5 +1,5 @@
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
-from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
@@ -57,7 +57,7 @@ async def list_reports(
 
 @router.get("/dashboard", include_in_schema=False)
 async def get_dashboard(db: AsyncSession = Depends(get_db)):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     total_count = await db.scalar(select(func.count(Report.id)))
@@ -193,8 +193,8 @@ def _report_to_dict(report: Report) -> dict:
         "upvotes":     0,
         "commentCount": 0,
         "isUpvoted":  False,
-        "createdAt":   report.created_at.isoformat() if report.created_at else datetime.now(timezone.utc).isoformat(),
-        "updatedAt":   report.updated_at.isoformat() if report.updated_at else datetime.now(timezone.utc).isoformat(),
+        "createdAt":   report.created_at.isoformat() if report.created_at else datetime.now(UTC).isoformat(),
+        "updatedAt":   report.updated_at.isoformat() if report.updated_at else datetime.now(UTC).isoformat(),
     }
 
 

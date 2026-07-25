@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from backend.agents.state import EnhancementResult, PipelineSharedState
@@ -28,10 +29,10 @@ class EnhancerPydanticOutput(BaseModel):
 class EnhancementAgent:
     """Agent that translates and generates executive summaries for PMC municipal staff."""
 
-    def __init__(self, ai_engine: Optional[UnifiedAIEngine] = None) -> None:
+    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
         self.ai_engine = ai_engine or UnifiedAIEngine(provider="openrouter")
 
-    def process(self, state: PipelineSharedState) -> Dict[str, Any]:
+    def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Report Enhancer node logic for LangGraph workflow."""
         start_time = time.time()
         text_content = state.get("sanitised_text") or state.get("raw_text", "")
