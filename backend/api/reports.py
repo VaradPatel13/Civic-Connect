@@ -181,12 +181,12 @@ def _report_to_dict(report: Report) -> dict:
         "images": [
             {
                 "id":            str(p.id),
-                "url":           p.cloudinary_url,
+                "url":           p.cloudinary_url or p.secure_url or "",
                 "display_order": p.display_order,
                 "forensic_score": p.forensic_score,
                 "is_authentic":  p.is_authentic,
             }
-            for p in sorted(report.photos, key=lambda p: p.display_order)
+            for p in sorted(report.photos, key=lambda p: p.display_order or 0)
         ] if report.photos else [],
         "authorId":   str(report.citizen_id),
         "authorName": "",

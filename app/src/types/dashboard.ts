@@ -2,7 +2,7 @@
 // These are NOT hardcoded in UI components. Components consume these from
 // the store or API layer. Only the type definitions live here.
 
-export type ReportStatus = 'open' | 'in_progress' | 'resolved' | 'closed' | 'rejected';
+export type ReportStatus = 'open' | 'pending' | 'processing' | 'verified' | 'assigned' | 'in_progress' | 'resolved' | 'closed' | 'rejected';
 export type ReportCategory =
   | 'pothole'   | 'streetlight' | 'drainage'     | 'water'
   | 'sanitation'| 'traffic'     | 'noise'        | 'other';

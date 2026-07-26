@@ -107,6 +107,9 @@ function ReportCard({ report, onPress }: { report: Report; onPress: () => void }
     : report.status === 'in_progress' ? tokens.info.DEFAULT
     : tokens.accent.DEFAULT;
 
+  const firstImg = report.images?.[0];
+  const imageUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
+
   return (
     <TouchableOpacity activeOpacity={0.75} onPress={onPress} style={{ marginBottom: 6 }}>
       <View style={{
@@ -122,9 +125,9 @@ function ReportCard({ report, onPress }: { report: Report; onPress: () => void }
       }}>
         {/* Image */}
         <View style={{ height: 130, backgroundColor: `${tokens.primary.DEFAULT}10`, overflow: 'hidden' }}>
-          {report.images?.length && !imgError ? (
+          {Boolean(imageUrl) && !imgError ? (
             <Image
-              source={{ uri: report.images[0].url }}
+              source={{ uri: imageUrl }}
               style={{ width: '100%', height: '100%' }}
               onError={() => setImgError(true)}
               resizeMode="cover"
@@ -162,7 +165,7 @@ function ReportCard({ report, onPress }: { report: Report; onPress: () => void }
             </Text>
             <Text style={{ color: tokens.text.disabled, fontSize: 11 }}>·</Text>
             <Text style={{ color: tokens.text.secondary, fontSize: 11 }} numberOfLines={1}>
-              {report.location.address ?? 'Pune'}
+              {report.location?.address ?? 'Pune'}
             </Text>
             <Text style={{ color: tokens.text.disabled, fontSize: 11 }}>·</Text>
             <Text style={{ color: tokens.text.disabled, fontSize: 11 }}>{timeAgo(report.createdAt)}</Text>
@@ -306,17 +309,38 @@ export default function ReportsScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState<FilterTab>('All');
   const [refreshing, setRefreshing] = useState(false);
-  const [reports] = useState<Report[]>(MOCK_REPORTS);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchReports = async () => {
+    try {
+      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl}/api/v1/reports/`);
+      if (res.ok) {
+        const data = await res.json();
+        setReports(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      setReports([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, []);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 600);
+    fetchReports();
   };
 
   const filtered = reports.filter((r) => {
     if (filter === 'All')          return true;
-    if (filter === 'Open' && r.status === 'open')  return true;
-    if (filter === 'In Progress' && r.status === 'in_progress') return true;
+    if (filter === 'Open' && (r.status === 'open' || r.status === 'pending'))  return true;
+    if (filter === 'In Progress' && (r.status === 'in_progress' || r.status === 'assigned')) return true;
     if (filter === 'Resolved' && r.status === 'resolved') return true;
     return false;
   });
@@ -343,7 +367,10 @@ export default function ReportsScreen() {
           }
           ListEmptyComponent={<EmptyState filter={filter} />}
           renderItem={({ item }) => (
-            <ReportCard report={item} onPress={() => router.push('/create-report')} />
+            <ReportCard
+              report={item}
+              onPress={() => router.push({ pathname: '/report-details', params: { id: item.id } })}
+            />
           )}
         />
       )}

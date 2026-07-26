@@ -1,28 +1,30 @@
 {
-  "name": "CivicConnect",
-  "slug": "civic-connect",
-  "version": "1.0.0",
-  "orientation": "portrait",
-  "userInterfaceStyle": "automatic",
-  "scheme": "civicconnect",
-  "ios": {
-    "supportsTablet": true,
-    "bundleIdentifier": "com.civicconnect.app"
-  },
-  "android": {
-    "adaptiveIcon": {
-      "backgroundColor": "#1e40af"
+  "expo": {
+    "name": "CivicConnect",
+    "slug": "civic-connect",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "civicconnect",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.civicconnect.app"
     },
-    "package": "com.civicconnect.app"
-  },
-  "web": {
-    "bundler": "metro",
-    "output": "static"
-  },
-  "plugins": [
-    "expo-router"
-  ],
-  "experiments": {
-    "typedRoutes": true
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1e40af"
+      },
+      "package": "com.civicconnect.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

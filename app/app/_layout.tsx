@@ -22,7 +22,10 @@ export default function RootLayout() {
       <StatusBar style="auto" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="report-details" />
         <Stack.Screen name="create-report" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="camera" options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="submit-success" options={{ presentation: 'fullScreenModal' }} />
       </Stack>
     </SafeAreaProvider>
   );

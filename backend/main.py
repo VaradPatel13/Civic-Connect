@@ -10,6 +10,7 @@ from backend.api.departments import router as departments_router
 from backend.api.notifications import router as notifications_router
 from backend.api.reports import router as reports_router
 from backend.api.rewards import router as rewards_router
+from backend.api.uploads import router as uploads_router
 from backend.core.config import settings
 
 
@@ -41,6 +42,7 @@ api_v1_router.include_router(reports_router)
 api_v1_router.include_router(departments_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(rewards_router)
+api_v1_router.include_router(uploads_router)
 api_v1_router.include_router(ai_router)
 
 app.include_router(api_v1_router)
