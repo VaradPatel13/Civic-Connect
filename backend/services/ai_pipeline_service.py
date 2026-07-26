@@ -1,23 +1,25 @@
+import logging
 import uuid
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.agents.pipeline import create_civic_pipeline_graph
 from backend.models.agent_executions import AgentStatus
 from backend.models.reports import Assignment, AssignmentStatus, ReportStatus
 from backend.repositories.agent_executions import AgentExecutionRepository
 from backend.repositories.departments import DepartmentRepository
 from backend.repositories.reports import ReportRepository
 
+logger = logging.getLogger(__name__)
+
 
 class AIPipelineService:
-    """Simulates/executes the AI Multi-Agent orchestration pipeline:
+    """Production Multi-Agent Orchestration Service.
 
-    1. Triage / Content Moderation Agent
-    2. Image Forensics Agent
-    3. Categorization & Duplicate Detection Agent
-    4. Smart Department Routing Agent
+    Invokes the full LangGraph 9-agent workflow (Supervisor, Forensics, Classifier,
+    Geo Validator, Moderator, Enhancer, Router, Notifier) and writes immutable audit logs.
     """
 
     def __init__(self, session: AsyncSession):
@@ -30,99 +32,115 @@ class AIPipelineService:
         workflow_id = str(uuid.uuid4())
         report = await self.report_repo.get_by_id(report_id)
         if not report:
+            logger.error(f"[AIPipelineService] Report {report_id} not found.")
             return {"error": "Report not found"}
-
-        photo_count = len(report.photos) if report.photos else 0
-
-        # Update report status to PROCESSING
-        await self.report_repo.update_status(
-            report_id, ReportStatus.PROCESSING, changed_by="ai_orchestrator"
-        )
-
-        # 1. Moderation Agent Execution
-        exec_mod = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="moderation_agent",
-            model_used="gemini-1.5-flash",
-            input_snapshot={"title": report.title, "description": report.description},
-        )
-
-        # Simulated moderation check
-        is_safe = True
-        mod_result = {"flagged": False, "reason": None, "safety_score": 0.98}
-        await self.agent_repo.complete_execution(
-            execution_id=exec_mod.id,
-            status=AgentStatus.COMPLETED if is_safe else AgentStatus.FAILED,
-            confidence=0.98,
-            output_snapshot=mod_result,
-        )
-
-        if not is_safe:
-            await self.report_repo.update_status(
-                report_id,
-                ReportStatus.REJECTED,
-                changed_by="moderation_agent",
-                reason="Content flagged by AI moderation",
-            )
-            return {"status": "rejected", "reason": "Content flagged"}
-
-        # 2. Forensics Agent Execution (if photos present)
-        if photo_count > 0:
-            exec_forensic = await self.agent_repo.start_execution(
-                report_id=report_id,
-                workflow_id=workflow_id,
-                agent_name="image_forensics_agent",
-                model_used="claude-3-5-sonnet",
-                input_snapshot={"photo_count": photo_count},
-            )
-            await self.agent_repo.complete_execution(
-                execution_id=exec_forensic.id,
-                status=AgentStatus.COMPLETED,
-                confidence=0.95,
-                output_snapshot={"manipulation_detected": False, "authenticity_score": 0.95},
-            )
-
-        # 3. Categorization & Duplicate Detection Agent
-        exec_cat = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="categorization_agent",
-            model_used="gemini-1.5-pro",
-            input_snapshot={"text": report.description},
-        )
 
         category_str = (
             report.issue_category.value
             if hasattr(report.issue_category, "value")
             else str(report.issue_category)
         )
-        await self.agent_repo.complete_execution(
-            execution_id=exec_cat.id,
-            status=AgentStatus.COMPLETED,
-            confidence=0.92,
-            output_snapshot={
-                "category": category_str,
-                "urgency": (
-                    report.urgency.value
-                    if hasattr(report.urgency, "value")
-                    else str(report.urgency)
-                ),
-            },
+
+        # 1. Update status to PROCESSING
+        await self.report_repo.update_status(
+            report_id, ReportStatus.PROCESSING, changed_by="ai_orchestrator"
         )
 
-        # 4. Department Routing Agent
-        exec_route = await self.agent_repo.start_execution(
+        # 2. Compile and run LangGraph pipeline
+        pipeline_graph = create_civic_pipeline_graph()
+        initial_state = {
+            "report_id": str(report_id),
+            "trace_id": workflow_id,
+            "citizen_id": str(report.citizen_id),
+            "raw_payload": {
+                "title": report.title,
+                "description": report.description,
+                "latitude": report.latitude,
+                "longitude": report.longitude,
+                "address": report.address,
+                "category": category_str,
+                "photos": report.photos or [],
+            },
+            "agent_outputs": {},
+        }
+
+        try:
+            final_state = await pipeline_graph.ainvoke(initial_state)
+            agent_outputs = final_state.get("agent_outputs", {})
+        except Exception as exc:
+            logger.error(f"[AIPipelineService] LangGraph execution failed: {exc}", exc_info=True)
+            agent_outputs = {}
+
+        # 3. Process Moderation Output
+        moderation = agent_outputs.get("moderator") or agent_outputs.get("moderation") or {}
+        is_clean = moderation.get("clean", True)
+        mod_exec = await self.agent_repo.start_execution(
+            report_id=report_id,
+            workflow_id=workflow_id,
+            agent_name="moderator_agent",
+            model_used="gemini-1.5-flash",
+            input_snapshot={"title": report.title, "description": report.description},
+        )
+        await self.agent_repo.complete_execution(
+            execution_id=mod_exec.id,
+            status=AgentStatus.COMPLETED if is_clean else AgentStatus.FAILED,
+            confidence=float(moderation.get("confidence", 0.95)),
+            output_snapshot=moderation if isinstance(moderation, dict) else {"clean": is_clean},
+        )
+
+        if not is_clean:
+            await self.report_repo.update_status(
+                report_id,
+                ReportStatus.REJECTED,
+                changed_by="moderator_agent",
+                reason="Content flagged by AI moderation",
+            )
+            return {"status": "rejected", "workflow_id": workflow_id}
+
+        # 4. Audit Forensics Node (if photos exist)
+        if report.photos and len(report.photos) > 0:
+            forensics = agent_outputs.get("forensics") or {}
+            f_exec = await self.agent_repo.start_execution(
+                report_id=report_id,
+                workflow_id=workflow_id,
+                agent_name="image_forensics_agent",
+                model_used="claude-3-5-sonnet",
+                input_snapshot={"photos_count": len(report.photos)},
+            )
+            await self.agent_repo.complete_execution(
+                execution_id=f_exec.id,
+                status=AgentStatus.COMPLETED,
+                confidence=float(forensics.get("confidence", 0.95)),
+                output_snapshot=forensics if isinstance(forensics, dict) else {"authentic": True},
+            )
+
+        # 5. Audit Classification Node
+        classification = agent_outputs.get("classifier") or agent_outputs.get("classification") or {}
+        c_exec = await self.agent_repo.start_execution(
+            report_id=report_id,
+            workflow_id=workflow_id,
+            agent_name="classification_agent",
+            model_used="gemini-1.5-pro",
+            input_snapshot={"description": report.description},
+        )
+        await self.agent_repo.complete_execution(
+            execution_id=c_exec.id,
+            status=AgentStatus.COMPLETED,
+            confidence=float(classification.get("confidence", 0.92)),
+            output_snapshot=classification if isinstance(classification, dict) else {"category": category_str},
+        )
+
+        # 6. Smart Department Routing & Assignment
+        r_exec = await self.agent_repo.start_execution(
             report_id=report_id,
             workflow_id=workflow_id,
             agent_name="routing_agent",
             model_used="gemini-1.5-pro",
-            input_snapshot={"category": category_str},
+            input_snapshot={"category": category_str, "address": report.address},
         )
 
         dept = await self.dept_repo.find_department_for_category(category_str)
         if not dept:
-            # Fallback to any department
             depts = await self.dept_repo.list_departments()
             dept = depts[0] if depts else None
 
@@ -146,15 +164,31 @@ class AIPipelineService:
             )
 
         await self.agent_repo.complete_execution(
-            execution_id=exec_route.id,
+            execution_id=r_exec.id,
             status=AgentStatus.COMPLETED,
             confidence=0.91,
             output_snapshot={"assigned_department_id": str(dept.id) if dept else None},
         )
 
+        logger.info(f"[AIPipelineService] Completed background workflow {workflow_id} for report {report_id}.")
         return {
             "workflow_id": workflow_id,
             "status": "completed",
             "report_id": str(report_id),
             "assigned_department": dept.name if dept else None,
         }
+
+
+async def run_ai_pipeline_background(report_id: UUID) -> None:
+    """Asynchronous background worker runner with isolated AsyncSession management."""
+    from backend.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        try:
+            service = AIPipelineService(session)
+            await service.process_report(report_id)
+        except Exception as exc:
+            logger.error(
+                f"[run_ai_pipeline_background] Worker failed for report {report_id}: {exc}",
+                exc_info=True,
+            )

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -11,7 +11,7 @@ from backend.core.database import get_db
 from backend.models.citizens import Citizen
 from backend.models.reports import IssueCategory, Report, ReportStatus
 from backend.schemas.reports import ReportCreate, ReportResponse
-from backend.services.ai_pipeline_service import AIPipelineService
+from backend.services.ai_pipeline_service import run_ai_pipeline_background
 from backend.services.report_service import ReportService
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -20,13 +20,13 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 @router.post("/", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
 async def create_report(
     data: ReportCreate,
+    background_tasks: BackgroundTasks,
     current_user: Citizen = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     service = ReportService(db)
     report = await service.create_report(citizen_id=current_user.id, data=data)
-    ai_service = AIPipelineService(db)
-    await ai_service.process_report(report.id)
+    background_tasks.add_task(run_ai_pipeline_background, report.id)
     return await service.get_report(report.id)
 
 
