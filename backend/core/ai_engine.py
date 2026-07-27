@@ -122,10 +122,14 @@ class UnifiedAIEngine(BaseAIEngine):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        # Append schema requirements to force JSON output
-        schema_json = json.dumps(response_model.model_json_schema(), indent=2)
+        # Construct clean JSON template for LLM prompt
+        field_specs = [
+            f'  "{name}": "<{field.description or name}>"'
+            for name, field in response_model.model_fields.items()
+        ]
+        json_template = "{\n" + ",\n".join(field_specs) + "\n}"
         json_instruction = (
-            f"\n\nReturn ONLY a valid JSON object strictly matching this schema:\n{schema_json}"
+            f"\n\nReturn ONLY a valid JSON object strictly matching this exact key structure:\n{json_template}\nDo not wrap keys inside a 'properties' object or include any markdown explanations."
         )
         messages[-1]["content"] += json_instruction
 
@@ -157,6 +161,16 @@ class UnifiedAIEngine(BaseAIEngine):
 
         # Fast zero-token JSON parse & repair
         parsed_dict = self._parse_json_robust(raw_content)
+
+        # Robust unwrap if LLM wrapped response inside 'properties', 'data', 'result', etc.
+        model_keys = set(response_model.model_fields.keys())
+        if isinstance(parsed_dict, dict):
+            for wrapper_key in ("properties", "data", "result", "response", "output"):
+                sub = parsed_dict.get(wrapper_key)
+                if isinstance(sub, dict) and any(k in sub for k in model_keys):
+                    parsed_dict = sub
+                    break
+
         parsed_model = response_model.model_validate(parsed_dict)
 
         return parsed_model, execution_ms, total_tokens, self.model_name
