@@ -36,12 +36,14 @@ services:
       - key: CLOUDINARY_URL
         sync: false
 
+  - type: redis
+    name: civicconnect-redis
+    region: singapore
+    plan: starter
+    ipAllowList: []
+
 databases:
   - name: civicconnect-db
     databaseName: civicconnect
     user: civic_user
-    plan: starter
-
-kv:
-  - name: civicconnect-redis
     plan: starter
