@@ -16,6 +16,8 @@ from backend.models.agent_executions import (
 from backend.models.base import Base
 from backend.models.citizens import Citizen, OTPCode, Session
 from backend.models.departments import Department, DepartmentCategory
+from backend.models.idempotency import IdempotencyKey
+from backend.models.model_registry import ModelRegistry
 from backend.models.notifications import (
     DeliveryStatus,
     Notification,
@@ -23,6 +25,7 @@ from backend.models.notifications import (
     NotificationPriority,
     NotificationType,
 )
+from backend.models.report_events import ReportEvent
 from backend.models.reports import (
     Assignment,
     AssignmentStatus,
@@ -37,6 +40,10 @@ from backend.models.reports import (
 from backend.models.rewards import (
     RewardReason,
     RewardTransaction,
+)
+from backend.models.workflow_state import (
+    WorkflowState,
+    WorkflowStatus,
 )
 
 __all__ = [
@@ -59,8 +66,12 @@ __all__ = [
     "Notification",
     # Rewards
     "RewardTransaction",
-    # AI Pipeline
+    # AI Pipeline & Persistence Engine
     "AgentExecution",
+    "WorkflowState",
+    "IdempotencyKey",
+    "ModelRegistry",
+    "ReportEvent",
     # Enums
     "ReportStatus",
     "IssueCategory",
@@ -72,4 +83,5 @@ __all__ = [
     "DeliveryStatus",
     "RewardReason",
     "AgentStatus",
+    "WorkflowStatus",
 ]

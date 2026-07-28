@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from backend.agents.state import ForensicsResult, PipelineSharedState
-from backend.core.ai_engine import UnifiedAIEngine
+from backend.core.ai_engine import BaseAIEngine, UnifiedAIEngine
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,8 @@ class ForensicsPydanticOutput(BaseModel):
 class ForensicsAgent:
     """Agent that performs image authenticity and duplicate detection."""
 
-    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
-        self.ai_engine = ai_engine or UnifiedAIEngine(provider="openrouter")
+    def __init__(self, ai_engine: BaseAIEngine | UnifiedAIEngine | Any | None = None) -> None:
+        self.ai_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(provider="nvidia_nim")
 
     def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Image Forensics node logic for LangGraph workflow."""

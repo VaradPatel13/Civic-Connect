@@ -22,17 +22,21 @@ class NotificationAgent:
     def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Notifier node logic for LangGraph workflow."""
         start_time = time.time()
-        report_id = state.get("report_id", "UNKNOWN")
-        agent_outputs = state.get("agent_outputs", {})
+        report_id = str(state.get("report_id") or "UNKNOWN")
+        agent_outputs = state.get("agent_outputs") or {}
+        agent_dict = agent_outputs if isinstance(agent_outputs, dict) else {}
 
-        classification = agent_outputs.get("classification", {})
-        routing = agent_outputs.get("routing", {})
-        geo_val = agent_outputs.get("geo_validation", {})
+        classification = agent_dict.get("classification") if isinstance(agent_dict, dict) else {}
+        class_dict = classification if isinstance(classification, dict) else {}
+        routing = agent_dict.get("routing") if isinstance(agent_dict, dict) else {}
+        routing_dict = routing if isinstance(routing, dict) else {}
+        geo_val = agent_dict.get("geo_validation") if isinstance(agent_dict, dict) else {}
+        geo_dict = geo_val if isinstance(geo_val, dict) else {}
 
-        category = classification.get("category", "General")
-        ward_name = geo_val.get("ward_name", "PMC Ward")
-        dept_name = routing.get("department_name", "PMC Department")
-        sla_hours = routing.get("sla_target_hours", 72)
+        category = str(class_dict.get("category", "General"))
+        ward_name = str(geo_dict.get("ward_name", "PMC Ward"))
+        dept_name = str(routing_dict.get("department_name", "PMC Department"))
+        sla_hours = routing_dict.get("sla_target_hours", 72)
 
         # Formulate citizen push notification title & body
         notification_payload = {

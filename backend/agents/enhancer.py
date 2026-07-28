@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from backend.agents.state import EnhancementResult, PipelineSharedState
-from backend.core.ai_engine import UnifiedAIEngine
+from backend.core.ai_engine import BaseAIEngine, UnifiedAIEngine
 
 logger = logging.getLogger(__name__)
 
@@ -29,18 +29,19 @@ class EnhancerPydanticOutput(BaseModel):
 class EnhancementAgent:
     """Agent that translates and generates executive summaries for PMC municipal staff."""
 
-    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
-        self.ai_engine = ai_engine or UnifiedAIEngine(provider="openrouter")
+    def __init__(self, ai_engine: BaseAIEngine | UnifiedAIEngine | Any | None = None) -> None:
+        self.ai_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(provider="openrouter")
 
     def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Report Enhancer node logic for LangGraph workflow."""
         start_time = time.time()
-        text_content = state.get("sanitised_text") or state.get("raw_text", "")
-        agent_outputs = state.get("agent_outputs", {})
-        classification = agent_outputs.get("classification", {})
+        text_content: str = str(state.get("sanitised_text") or state.get("raw_text") or "")
+        agent_outputs = state.get("agent_outputs") or {}
+        classification = agent_outputs.get("classification") if isinstance(agent_outputs, dict) else {}
+        classification_dict = classification if isinstance(classification, dict) else {}
 
-        category = classification.get("category", "ADMIN")
-        urgency = classification.get("urgency", "medium")
+        category: str = str(classification_dict.get("category", "ADMIN"))
+        urgency: str = str(classification_dict.get("urgency", "medium"))
 
         system_prompt = (
             "You are the PMC Report Enhancer Agent.\n"

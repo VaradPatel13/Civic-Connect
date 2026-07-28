@@ -125,8 +125,7 @@ class ReportRepository:
         )
         self.session.add(log)
         await self.session.commit()
-        await self.session.refresh(report)
-        return report
+        return await self.get_by_id(report_id)
 
     async def add_photo(self, report_id: UUID, url: str, public_id: str = "") -> Photo:
         photo = Photo(

@@ -95,6 +95,16 @@ class AgentExecution(Base, UUIDMixin, TimestampMixin):
     output_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # ── Token Telemetry & Financial Cost ──────────────────────────────
+    tokens_prompt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_completion: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost: Mapped[float | None] = mapped_column(nullable=True)
+    temperature: Mapped[float | None] = mapped_column(nullable=True)
+
+    # ── Hashes & Cryptographic Verification ─────────────────────────────
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # ── Retry tracking ─────────────────────────────────────────────────
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_final_attempt: Mapped[bool] = mapped_column(

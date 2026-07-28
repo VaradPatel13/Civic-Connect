@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { tokens } from '@src/constants';
 import type { Report } from '@src/types';
+import { api } from '@src/lib/api';
 
 // ─── UI-only constants ───────────────────────────────────────────────────────
 
@@ -314,12 +315,8 @@ export default function ReportsScreen() {
 
   const fetchReports = async () => {
     try {
-      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${baseUrl}/api/v1/reports/`);
-      if (res.ok) {
-        const data = await res.json();
-        setReports(Array.isArray(data) ? data : []);
-      }
+      const data = await api.get<Report[]>('/api/v1/reports/');
+      setReports(Array.isArray(data) ? data : []);
     } catch {
       setReports([]);
     } finally {

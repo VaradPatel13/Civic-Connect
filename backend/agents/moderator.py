@@ -13,10 +13,10 @@ import re
 import time
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.agents.state import ModerationResult, PipelineSharedState
-from backend.core.ai_engine import UnifiedAIEngine
+from backend.core.ai_engine import BaseAIEngine, UnifiedAIEngine
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,13 @@ class ModeratorPydanticOutput(BaseModel):
     toxicity_score: float = Field(description="Toxicity score between 0.0 and 1.0")
     confidence: float = Field(description="Moderation confidence score between 0.0 and 1.0")
     requires_human_review: bool = Field(description="True if human admin review is required")
+
+    @field_validator("flags", mode="before")
+    @classmethod
+    def coerce_flags_to_list(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return [v] if v.strip() else []
+        return v
 
 
 # Regex rules for immediate profanity and prompt injection detection
@@ -40,30 +47,35 @@ INJECTION_KEYWORDS = [
     r"<script",
 ]
 
+COMPILED_INJECTION_PATTERN: re.Pattern[str] = re.compile(
+    "|".join(INJECTION_KEYWORDS), re.IGNORECASE
+)
+
 
 class ModerationAgent:
     """Agent that screens citizen content for safety and policy compliance."""
 
-    def __init__(self, ai_engine: UnifiedAIEngine | None = None) -> None:
-        self.ai_engine = ai_engine or UnifiedAIEngine(provider="openrouter")
+    def __init__(self, ai_engine: BaseAIEngine | UnifiedAIEngine | Any | None = None) -> None:
+        self.ai_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(provider="openrouter")
 
     def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Content Moderator node logic for LangGraph workflow."""
         start_time = time.time()
-        text_to_screen = state.get("sanitised_text") or state.get("raw_text", "")
+        text_to_screen: str = str(state.get("sanitised_text") or state.get("raw_text") or "")
 
         # Fast deterministic check for prompt injection keywords
-        for pattern in INJECTION_KEYWORDS:
-            if re.search(pattern, text_to_screen, re.IGNORECASE):
-                logger.warning(f"[Moderator] Prompt injection attempt detected matching '{pattern}'. Interupting graph.")
-                flagged: ModerationResult = {
-                    "clean": False,
-                    "flags": ["prompt_injection"],
-                    "toxicity_score": 0.95,
-                    "confidence": 0.99,
-                    "requires_human_review": True,
-                }
-                return {"agent_outputs": {"moderation": flagged}}
+        match = COMPILED_INJECTION_PATTERN.search(text_to_screen)
+        if match:
+            matched_pattern = match.group(0)
+            logger.warning(f"[Moderator] Prompt injection attempt detected matching '{matched_pattern}'. Interrupting graph.")
+            flagged: ModerationResult = {
+                "clean": False,
+                "flags": ["prompt_injection"],
+                "toxicity_score": 0.95,
+                "confidence": 0.99,
+                "requires_human_review": True,
+            }
+            return {"agent_outputs": {"moderation": flagged}}
 
         try:
             system_prompt = (

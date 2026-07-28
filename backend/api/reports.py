@@ -149,6 +149,44 @@ async def update_report_status(
     )
 
 
+@router.post("/{report_id}/review", response_model=ReportResponse)
+async def review_manual_report(
+    report_id: UUID,
+    approved: bool = True,
+    override_category: IssueCategory | None = None,
+    review_notes: str | None = None,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: Citizen = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Human-in-the-Loop review endpoint for municipal officers to approve/reject reports."""
+    service = ReportService(db)
+    report = await service.get_report(report_id)
+
+    if approved:
+        if override_category:
+            report.issue_category = override_category
+            db.add(report)
+            await db.commit()
+
+        await service.update_report_status(
+            report_id=report_id,
+            new_status=ReportStatus.VERIFIED,
+            changed_by=f"officer:{current_user.id}",
+            reason=f"Approved by officer: {review_notes or 'Passed manual review'}",
+        )
+        background_tasks.add_task(run_ai_pipeline_background, report.id)
+    else:
+        await service.update_report_status(
+            report_id=report_id,
+            new_status=ReportStatus.REJECTED,
+            changed_by=f"officer:{current_user.id}",
+            reason=f"Rejected by officer: {review_notes or 'Failed manual review'}",
+        )
+
+    return await service.get_report(report_id)
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _category_icon(category: IssueCategory) -> str:

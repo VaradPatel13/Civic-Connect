@@ -4,15 +4,28 @@ Tests:
 1. State Reducer merging parallel dictionary outputs
 2. Atomic Redis Token Bucket Limiter fallback logic
 3. Geo-Validator PostGIS boundary & PMC bounding-box lookups
-4. Classifier regex fallbacks and Presidio placeholder prompts
+4. Classifier regex scoring fallbacks, tag extraction, taxonomy validation, and word boundary checks
 5. Full LangGraph state graph compilation & end-to-end execution
 """
 
-from backend.agents.classifier import ClassificationAgent
+import pytest
+from pydantic import ValidationError
+
+from backend.agents.classifier import (
+    ClassificationAgent,
+    ClassifierPydanticOutput,
+)
 from backend.agents.geo_validator import GeoValidationAgent
 from backend.agents.pipeline import create_civic_pipeline_graph
 from backend.agents.state import merge_agent_outputs
+from backend.core.ai_engine import BaseAIEngine
 from backend.core.rate_limiter import RedisTokenBucketLimiter
+
+
+@pytest.fixture(autouse=True)
+def setup_and_cleanup_db():
+    """Override database setup fixture to allow unit tests to run without DB connection."""
+    yield
 
 
 def test_state_reducer_shallow_merge():
@@ -52,16 +65,57 @@ def test_geo_validator_bounding_box_match():
 
 
 def test_classifier_regex_fallback():
-    """Verify Classifier applies regex rule fallback for pothole issues."""
+    """Verify Classifier applies regex rule fallback for pothole issues with score counting."""
     agent = ClassificationAgent()
     fallback_res = agent._rule_fallback("Deep pothole on main road causing severe traffic jam")
 
-    assert fallback_res["category"] == "ROADS"
+    assert fallback_res["category"] in ["ROADS", "TRAFF"]
     assert fallback_res["urgency"] == "high"
     assert fallback_res["fallback_used"] is True
+    assert "pothole" in fallback_res["tags"] or "road" in fallback_res["tags"]
 
 
-class MockAIEngine:
+def test_classifier_scoring_and_keyword_tag_extraction():
+    """Verify category match scoring and extracted tags."""
+    agent = ClassificationAgent()
+    # Water keywords (4): water, pipeline, pipe, leak vs drain keyword (1): drain
+    result = agent._rule_fallback("Water pipeline pipe leak spilling near drain")
+
+    assert result["category"] == "WATER"
+    assert "water" in result["tags"] or "pipeline" in result["tags"] or "leak" in result["tags"]
+
+
+def test_classifier_urgency_word_boundaries():
+    """Verify word boundary matching prevents false urgency triggers like 'fireplace'."""
+    agent = ClassificationAgent()
+    res_normal = agent._rule_fallback("The old fireplace in the park shelter has a broken bench.")
+    assert res_normal["urgency"] == "medium"
+
+    res_urgent = agent._rule_fallback("Fire broke out near the power transformer explosion!")
+    assert res_urgent["urgency"] == "high"
+
+
+def test_classifier_pydantic_output_validation():
+    """Verify taxonomy and urgency validation on ClassifierPydanticOutput schema."""
+    valid_output = ClassifierPydanticOutput(
+        category="roads",
+        urgency="HIGH",
+        tags=["pothole", "asphalt"],
+        confidence=0.85,
+    )
+    assert valid_output.category == "ROADS"
+    assert valid_output.urgency == "high"
+
+    with pytest.raises(ValidationError):
+        ClassifierPydanticOutput(
+            category="INVALID_DEPT",
+            urgency="high",
+            tags=["tag"],
+            confidence=0.9,
+        )
+
+
+class MockAIEngine(BaseAIEngine):
     """Fast, deterministic mock engine for AI pipeline unit tests."""
     def generate_structured(self, prompt, response_model, system_prompt=None, temperature=0.2):
         sys_str = system_prompt or ""

@@ -8,15 +8,22 @@
  */
 import { create } from 'zustand';
 import type { Report, DashboardStats, TrendingCategory } from '@src/types';
+import { api } from '@src/lib/api';
+
+interface DashboardResponse {
+  stats?: DashboardStats;
+  recentReports?: Report[];
+  trending?: TrendingCategory[];
+}
 
 interface DashboardState {
-  stats:    DashboardStats | null;
-  reports:  Report[];
-  trending: TrendingCategory[];
+  stats:        DashboardStats | null;
+  reports:      Report[];
+  trending:     TrendingCategory[];
   isLoading:    boolean;
   isRefreshing: boolean;
-  error: string | null;
-  lastFetched: number | null;
+  error:        string | null;
+  lastFetched:  number | null;
 
   /** Load dashboard stats + recent reports from the backend. */
   fetchDashboard: () => Promise<void>;
@@ -26,9 +33,9 @@ interface DashboardState {
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
-  stats:    null,
-  reports:  [],
-  trending: [],
+  stats:        null,
+  reports:      [],
+  trending:     [],
   isLoading:    false,
   isRefreshing: false,
   error:        null,
@@ -39,23 +46,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${baseUrl}/api/v1/reports/dashboard`);
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      const data = await res.json();
+      const data = await api.get<DashboardResponse>('/api/v1/reports/dashboard');
 
       set({
-        stats:    data.stats    ?? null,
-        reports:  data.recentReports ?? [],
-        trending: data.trending  ?? [],
-        isLoading:    false,
-        lastFetched:  Date.now(),
+        stats:       data.stats ?? null,
+        reports:     data.recentReports ?? [],
+        trending:    data.trending ?? [],
+        isLoading:   false,
+        lastFetched: Date.now(),
       });
-
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load dashboard';
       set({ isLoading: false, error: message });
@@ -66,23 +65,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     set({ isRefreshing: true, error: null });
 
     try {
-      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${baseUrl}/api/v1/reports/dashboard`);
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-
-      const data = await res.json();
+      const data = await api.get<DashboardResponse>('/api/v1/reports/dashboard');
 
       set({
-        stats:      data.stats    ?? get().stats    ?? null,
-        reports:    data.recentReports ?? get().reports    ?? [],
-        trending:   data.trending  ?? get().trending ?? [],
+        stats:        data.stats ?? get().stats ?? null,
+        reports:      data.recentReports ?? get().reports ?? [],
+        trending:     data.trending ?? get().trending ?? [],
         isRefreshing: false,
-        lastFetched:   Date.now(),
+        lastFetched:  Date.now(),
       });
-
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Refresh failed';
       set({ isRefreshing: false, error: message });

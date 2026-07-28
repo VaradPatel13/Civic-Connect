@@ -3,7 +3,7 @@ services:
     name: civicconnect-api
     env: python
     region: singapore
-    plan: starter
+    plan: free
     buildCommand: "./scripts/render_build.sh"
     preDeployCommand: "alembic upgrade head"
     startCommand: "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
@@ -17,10 +17,7 @@ services:
           name: civicconnect-db
           property: connectionString
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: civicconnect-redis
-          property: connectionString
+        value: ""  # Uses internal in-memory rate limiter fallback (100% Free)
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_ALGORITHM
@@ -36,14 +33,8 @@ services:
       - key: CLOUDINARY_URL
         sync: false
 
-  - type: redis
-    name: civicconnect-redis
-    region: singapore
-    plan: starter
-    ipAllowList: []
-
 databases:
   - name: civicconnect-db
     databaseName: civicconnect
     user: civic_user
-    plan: starter
+    plan: free

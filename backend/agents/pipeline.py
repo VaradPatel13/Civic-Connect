@@ -23,7 +23,7 @@ from backend.agents.moderator import ModerationAgent
 from backend.agents.notifier import NotificationAgent
 from backend.agents.router import RouterAgent
 from backend.agents.state import PipelineSharedState
-from backend.core.ai_engine import UnifiedAIEngine
+from backend.core.ai_engine import BaseAIEngine, UnifiedAIEngine
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -57,33 +57,32 @@ def supervisor_node(state: PipelineSharedState) -> dict[str, Any]:
 
 # ── Agent Node Wrapper Instances ───────────────────────────────────────────
 def create_civic_pipeline_graph(
-    ai_engine: UnifiedAIEngine | None = None,
+    ai_engine: BaseAIEngine | UnifiedAIEngine | Any | None = None,
     db_session_factory: Any | None = None,
 ) -> Any:
     """Compiles the LangGraph StateGraph workflow with per-agent specialized model bindings."""
 
     provider = settings.ai_provider.lower()
 
-    # Per-Agent Specialized Model Engine Instances (NVIDIA NIM / OpenRouter / OpenAI)
-    forensics_engine = ai_engine or UnifiedAIEngine(
+    forensics_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(
         provider=provider,
-        model=settings.nim_model_forensics if provider == "nvidia_nim" else None,
+        model=settings.nim_model_forensics or settings.ai_model or None,
     )
-    classifier_engine = ai_engine or UnifiedAIEngine(
+    classifier_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(
         provider=provider,
-        model=settings.nim_model_classifier if provider == "nvidia_nim" else None,
+        model=settings.nim_model_classifier or settings.ai_model or None,
     )
-    moderator_engine = ai_engine or UnifiedAIEngine(
+    moderator_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(
         provider=provider,
-        model=settings.nim_model_moderator if provider == "nvidia_nim" else None,
+        model=settings.nim_model_moderator or settings.ai_model or None,
     )
-    enhancer_engine = ai_engine or UnifiedAIEngine(
+    enhancer_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(
         provider=provider,
-        model=settings.nim_model_enhancer if provider == "nvidia_nim" else None,
+        model=settings.nim_model_enhancer or settings.ai_model or None,
     )
-    router_engine = ai_engine or UnifiedAIEngine(
+    router_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(
         provider=provider,
-        model=settings.nim_model_router if provider == "nvidia_nim" else None,
+        model=settings.nim_model_router or settings.ai_model or None,
     )
 
     # Instantiate agents with their respective specialized models

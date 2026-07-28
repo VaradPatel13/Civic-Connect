@@ -51,6 +51,7 @@ class ReportStatus(str, Enum):
 
     PENDING = "pending"
     PROCESSING = "processing"
+    PENDING_MANUAL_REVIEW = "review"
     VERIFIED = "verified"
     ASSIGNED = "assigned"
     IN_PROGRESS = "in_progress"

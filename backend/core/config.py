@@ -34,12 +34,12 @@ class Settings(BaseSettings):
     nvidia_api_key: str = ""
     openai_api_key: str = ""
 
-    # ── Per-Agent NVIDIA NIM Specialized Models ────────────────────────
-    nim_model_forensics: str = "meta/llama-3.2-11b-vision-instruct"
-    nim_model_classifier: str = "meta/llama-3.1-70b-instruct"
-    nim_model_moderator: str = "meta/llama-3.1-8b-instruct"
-    nim_model_enhancer: str = "meta/llama-3.1-70b-instruct"
-    nim_model_router: str = "meta/llama-3.1-8b-instruct"
+    # ── Per-Agent NVIDIA NIM Specialized Models (Configured via .env) ───
+    nim_model_forensics: str = ""
+    nim_model_classifier: str = ""
+    nim_model_moderator: str = ""
+    nim_model_enhancer: str = ""
+    nim_model_router: str = ""
 
     cloudinary_url: str = ""
 
