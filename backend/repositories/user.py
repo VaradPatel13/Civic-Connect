@@ -57,9 +57,29 @@ class UserRepository:
         result = await self.db.execute(select(Session).where(Session.id == session_id))
         return result.scalar_one_or_none()
 
+    async def get_active_session_by_hash(
+        self, citizen_id: uuid.UUID, refresh_token_hash: str
+    ) -> Session | None:
+        result = await self.db.execute(
+            select(Session).where(
+                Session.citizen_id == citizen_id,
+                Session.refresh_token_hash == refresh_token_hash,
+                Session.revoked_at.is_(None),
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def revoke_session(self, session_id: uuid.UUID) -> None:
         await self.db.execute(
             update(Session).where(Session.id == session_id).values(revoked_at=func.now())
+        )
+        await self.db.commit()
+
+    async def revoke_session_by_hash(self, refresh_token_hash: str) -> None:
+        await self.db.execute(
+            update(Session)
+            .where(Session.refresh_token_hash == refresh_token_hash)
+            .values(revoked_at=func.now())
         )
         await self.db.commit()
 
@@ -70,3 +90,4 @@ class UserRepository:
             .values(revoked_at=func.now())
         )
         await self.db.commit()
+

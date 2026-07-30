@@ -4,9 +4,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync } from 'expo-keep-awake';
+import { useAuthStore } from '@src/store/useAuthStore';
 
 export default function RootLayout() {
+  const initializeAuth = useAuthStore((state) => state.initializeAuth);
+
   useEffect(() => {
+    initializeAuth();
+
     // Safely attempt to keep screen awake during dev, catching unhandled promise rejections on Android/Expo Go
     activateKeepAwakeAsync().catch(() => {
       // Ignored: Non-critical feature if device/emulator disallows keep-awake
@@ -21,7 +26,7 @@ export default function RootLayout() {
       window.addEventListener('unhandledrejection', handleRejection);
       return () => window.removeEventListener('unhandledrejection', handleRejection);
     }
-  }, []);
+  }, [initializeAuth]);
 
   return (
     <SafeAreaProvider>

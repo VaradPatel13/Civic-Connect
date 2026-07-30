@@ -184,7 +184,7 @@ async def refresh(
     user_repo: UserRepository = Depends(get_user_repository),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
-    """Refreshes access and refresh tokens using a valid refresh token."""
+    """Refreshes access and refresh tokens using a valid refresh token with Refresh Token Rotation."""
     decoded = auth_service.verify_token(payload.refresh_token, token_type="refresh")
     if not decoded or not decoded.get("sub"):
         raise HTTPException(
@@ -200,6 +200,18 @@ async def refresh(
             detail="Invalid user ID in refresh token",
         ) from err
 
+    # Verify that this refresh token exists and is active in the database session
+    old_refresh_hash = auth_service.hash_otp(payload.refresh_token)
+    active_session = await user_repo.get_active_session_by_hash(citizen_id, old_refresh_hash)
+    if not active_session:
+        # Replay attack detection or revoked token!
+        # Security best practice: revoke all sessions for this user if token reuse/replay is detected
+        await user_repo.revoke_all_sessions(citizen_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token is revoked or invalid. Session terminated.",
+        )
+
     citizen = await user_repo.get_by_id(citizen_id)
     if not citizen or not citizen.is_active:
         raise HTTPException(
@@ -207,14 +219,18 @@ async def refresh(
             detail="User account not found or inactive",
         )
 
+    # Invalidate (revoke) old refresh token session - Refresh Token Rotation (RTR)
+    await user_repo.revoke_session(active_session.id)
+
+    # Issue new access token and new rotated refresh token
     role_str = str(citizen.role.value) if hasattr(citizen.role, "value") else str(citizen.role)
     new_access_token = auth_service.create_access_token(str(citizen.id), role=role_str)
     new_refresh_token = auth_service.create_refresh_token(str(citizen.id))
 
-    refresh_hash = auth_service.hash_otp(new_refresh_token)
+    new_refresh_hash = auth_service.hash_otp(new_refresh_token)
     await user_repo.create_session(
         citizen_id=citizen.id,
-        refresh_token_hash=refresh_hash,
+        refresh_token_hash=new_refresh_hash,
     )
 
     user_profile = auth_service.build_profile_response(citizen)
@@ -229,10 +245,15 @@ async def refresh(
 
 @router.post("/logout")
 async def logout(
+    payload: RefreshRequest | None = None,
     current_user: Citizen = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repository),
+    auth_service: AuthService = Depends(get_auth_service),
 ) -> dict[str, str]:
-    """Revokes active refresh tokens and logs out user."""
+    """Revokes active refresh token session and logs out user."""
+    if payload and payload.refresh_token:
+        refresh_hash = auth_service.hash_otp(payload.refresh_token)
+        await user_repo.revoke_session_by_hash(refresh_hash)
     await user_repo.revoke_all_sessions(current_user.id)
     return {"message": "Logged out successfully"}
 

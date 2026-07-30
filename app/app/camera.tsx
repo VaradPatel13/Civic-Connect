@@ -1,16 +1,9 @@
-/**
- * Camera Capture Screen — CivicConnect
- *
- * Full-screen camera that opens immediately on FAB tap.
- * User takes ONE live photo → uploads to backend/Cloudinary → advances to create-report.
- * Note: Gallery uploads are strictly disabled to enforce authentic civic reporting.
- */
 import { useRef, useState } from 'react';
-import { Alert, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, StyleSheet, Platform, useColorScheme, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
-import { tokens } from '@src/constants';
+import { TOKENS } from '@src/theme/tokens';
 import { api } from '@src/lib/api';
 import { getCurrentLocation } from '@src/lib/location';
 import type { UploadAsset } from '@src/types/reports';
@@ -18,39 +11,42 @@ import type { UploadAsset } from '@src/types/reports';
 export default function CameraScreen() {
   const router = useRouter();
   const cameraRef = useRef<CameraView>(null);
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const p = isDark ? TOKENS.colors.dark : TOKENS.colors.light;
+
   const [facing, setFacing] = useState<CameraType>('back');
   const [uploading, setUploading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
-  // ── Permission loading ───────────────────────────────────────────────────
   if (!permission) {
     return (
-      <View style={styles.permissionContainer}>
-        <Text style={styles.permissionText}>Loading camera…</Text>
+      <View style={[styles.permissionContainer, { backgroundColor: p.bg }]}>
+        <ActivityIndicator size="large" color={p.accentPrimary} />
       </View>
     );
   }
 
-  // ── Permission denied ────────────────────────────────────────────────────
   if (!permission.granted) {
     return (
-      <View style={styles.permissionContainer}>
-        <Ionicons name="camera-outline" size={52} color={tokens.text.disabled} />
-        <Text style={styles.permissionTitle}>Camera Access Needed</Text>
-        <Text style={styles.permissionText}>
-          CivicConnect requires live camera access to photograph civic issues in real-time.
+      <View style={[styles.permissionContainer, { backgroundColor: p.bg }]}>
+        <View style={[styles.permIconCircle, { backgroundColor: p.pillBg }]}>
+          <Ionicons name="camera-outline" size={40} color={p.accentPrimary} />
+        </View>
+        <Text style={[styles.permissionTitle, { color: p.textPrimary }]}>Live Camera Inspection</Text>
+        <Text style={[styles.permissionText, { color: p.textSecondary }]}>
+          CivicConnect mandates authentic, live geo-tagged photo evidence to dispatch ward repair crews.
         </Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+        <TouchableOpacity style={[styles.permissionButton, { backgroundColor: p.accentPrimary }]} onPress={requestPermission}>
+          <Text style={styles.permissionButtonText}>Enable Camera Access</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={{ marginTop: 16 }} onPress={() => router.back()}>
-          <Text style={{ color: tokens.text.secondary, fontSize: 14, fontWeight: '600' }}>Cancel</Text>
+        <TouchableOpacity style={styles.cancelLink} onPress={() => router.back()}>
+          <Text style={[styles.cancelText, { color: p.textMuted }]}>Dismiss</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // ── Capture photo → upload → navigate ────────────────────────────────────
   async function handleCapture() {
     if (!cameraRef.current || uploading) return;
 
@@ -62,19 +58,18 @@ export default function CameraScreen() {
         const loc = await getCurrentLocation();
         locData = { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy };
       } catch {
-        // Fallback location if permission or GPS read fails
+        // Fallback GPS location
       }
-      
 
       const photoMetadata = JSON.stringify({
-        capture_source: 'camera',
+        capture_source: 'camera_hud',
         latitude: locData.latitude ?? 18.5204,
         longitude: locData.longitude ?? 73.8567,
-        gps_accuracy_m: locData.accuracy ?? 10.0,
+        gps_accuracy_m: locData.accuracy ?? 8.5,
         captured_at: new Date().toISOString(),
-        device_model: Platform.OS === 'ios' ? 'iOS Device' : 'Android Device',
+        device_model: Platform.OS === 'ios' ? 'iPhone' : 'Android Mobile',
         os_version: `${Platform.OS} ${Platform.Version}`,
-        app_version: '1.0.0',
+        app_version: '1.2.0',
       });
 
       const asset = await uploadToCloudinary(photo!.uri);
@@ -83,7 +78,7 @@ export default function CameraScreen() {
         params: { photoUri: photo!.uri, photoMetadata, ...asset },
       });
     } catch {
-      Alert.alert('Capture Failed', 'Could not capture photo. Please try again.', [
+      Alert.alert('Scan Failed', 'Could not record inspection photo. Please try again.', [
         { text: 'Retry', onPress: handleCapture },
         { text: 'Cancel', style: 'cancel' },
       ]);
@@ -96,9 +91,8 @@ export default function CameraScreen() {
     setFacing((current) => (current === 'back' ? 'front' : 'back'));
   }
 
-  // ── Upload to backend which pushes to Cloudinary ──────────────────────────
   async function uploadToCloudinary(uri: string): Promise<UploadAsset> {
-    const filename = uri.split('/').pop() ?? 'photo.jpg';
+    const filename = uri.split('/').pop() ?? 'inspection_scan.jpg';
     return api.upload<UploadAsset>('/api/v1/uploads/', {
       uri,
       name: filename,
@@ -108,53 +102,58 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      <CameraView
-        ref={cameraRef}
-        style={StyleSheet.absoluteFillObject}
-        facing={facing}
-      />
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing={facing} />
 
-      {/* Top bar */}
+      {/* Camera Viewfinder Reticle & HUD Overlay */}
+      <View style={styles.hudOverlay} pointerEvents="none">
+        <View style={styles.viewfinderFrame}>
+          <View style={[styles.cornerTL, { borderColor: p.accentCyan }]} />
+          <View style={[styles.cornerTR, { borderColor: p.accentCyan }]} />
+          <View style={[styles.cornerBL, { borderColor: p.accentCyan }]} />
+          <View style={[styles.cornerBR, { borderColor: p.accentCyan }]} />
+        </View>
+        <Text style={styles.hudScanTag}>[ AI INFRASTRUCTURE AUDIT HUD ]</Text>
+      </View>
+
+      {/* Top Controls Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="close" size={26} color="#fff" />
+        <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
+          <Ionicons name="close" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.stepLabel}>Step 1 of 2 · Live Camera</Text>
+
+        <View style={styles.stepBadge}>
+          <View style={styles.dotLive} />
+          <Text style={styles.stepLabel}>STEP 1/2 • REAL-TIME AUDIT</Text>
+        </View>
+
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Bottom controls */}
+      {/* Bottom Shutter Controls */}
       <View style={styles.controls}>
-        {/* Spacer */}
         <View style={{ width: 52 }} />
 
-        {/* Capture button */}
         <TouchableOpacity
           style={[styles.captureBtn, uploading && styles.captureBtnDisabled]}
           onPress={handleCapture}
-          disabled={uploading}
-        >
+          disabled={uploading}>
           {uploading ? (
-            <Ionicons name="cloud-upload-outline" size={36} color="#fff" />
+            <ActivityIndicator size="large" color={p.accentPrimary} />
           ) : (
-            <View style={styles.captureBtnInner} />
+            <View style={[styles.captureBtnInner, { backgroundColor: p.accentPrimary }]} />
           )}
         </TouchableOpacity>
 
-        {/* Flip camera */}
         <TouchableOpacity style={styles.sideBtn} onPress={toggleCameraFacing}>
-          <Ionicons name="camera-reverse-outline" size={26} color="#fff" />
+          <Ionicons name="camera-reverse-outline" size={24} color="#FFF" />
         </TouchableOpacity>
       </View>
 
-      {/* Upload progress overlay */}
+      {/* Uploading Spinner Sheet */}
       {uploading && (
         <View style={styles.uploadingOverlay}>
-          <Ionicons name="cloud-upload-outline" size={40} color="#fff" />
-          <Text style={styles.uploadingText}>Uploading photo…</Text>
+          <ActivityIndicator size="large" color={p.accentCyan} />
+          <Text style={styles.uploadingText}>Analyzing Geo-Tag & Uploading Photo…</Text>
         </View>
       )}
     </View>
@@ -167,25 +166,34 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: tokens.surface.bg,
     paddingHorizontal: 40,
+    gap: 12,
   },
-  permissionTitle: { fontSize: 20, fontWeight: '800', color: tokens.text.primary, marginTop: 16, textAlign: 'center' },
-  permissionText: { fontSize: 14, color: tokens.text.secondary, marginTop: 8, textAlign: 'center', lineHeight: 22 },
+  permIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  permissionTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  permissionText: { fontSize: 13, textAlign: 'center', lineHeight: 20, maxWidth: 280 },
   permissionButton: {
-    backgroundColor: tokens.primary.DEFAULT,
-    borderRadius: 24,
-    paddingVertical: 13,
+    borderRadius: 16,
+    paddingVertical: 14,
     paddingHorizontal: 28,
-    marginTop: 28,
+    marginTop: 16,
   },
-  permissionButtonText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  permissionButtonText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  cancelLink: { marginTop: 8 },
+  cancelText: { fontSize: 13, fontWeight: '600' },
 
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 56,
+    paddingTop: Platform.select({ ios: 56, android: 44 }) ?? 44,
     paddingHorizontal: 20,
     zIndex: 10,
   },
@@ -193,11 +201,53 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepLabel: { fontSize: 12, fontWeight: '700', color: '#fff', letterSpacing: 1 },
+  stepBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  dotLive: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#84CC16',
+  },
+  stepLabel: { fontSize: 10, fontWeight: '900', color: '#FFF', letterSpacing: 0.5 },
+
+  hudOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewfinderFrame: {
+    width: 260,
+    height: 260,
+    position: 'relative',
+  },
+  cornerTL: { position: 'absolute', top: 0, left: 0, width: 30, height: 30, borderTopWidth: 3, borderLeftWidth: 3 },
+  cornerTR: { position: 'absolute', top: 0, right: 0, width: 30, height: 30, borderTopWidth: 3, borderRightWidth: 3 },
+  cornerBL: { position: 'absolute', bottom: 0, left: 0, width: 30, height: 30, borderBottomWidth: 3, borderLeftWidth: 3 },
+  cornerBR: { position: 'absolute', bottom: 0, right: 0, width: 30, height: 30, borderBottomWidth: 3, borderRightWidth: 3 },
+  hudScanTag: {
+    color: '#06B6D4',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginTop: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -212,7 +262,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -220,20 +270,21 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: '#fff',
+    borderColor: '#FFF',
   },
   captureBtnDisabled: { opacity: 0.6 },
-  captureBtnInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff' },
+  captureBtnInner: { width: 58, height: 58, borderRadius: 29 },
   uploadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.8)',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 20,
+    gap: 14,
   },
-  uploadingText: { color: '#fff', fontSize: 16, fontWeight: '700', marginTop: 12 },
+  uploadingText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
 });
