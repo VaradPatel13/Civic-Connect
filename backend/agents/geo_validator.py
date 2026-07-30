@@ -8,6 +8,7 @@ Specs: docs/specs/ai-pipeline.md, docs/specs/AGENT.md
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any, TypedDict
@@ -45,8 +46,8 @@ class GeoValidationAgent:
     def __init__(self, db_session_factory: Any | None = None) -> None:
         self.db_session_factory = db_session_factory
 
-    def process(self, state: PipelineSharedState) -> dict[str, Any]:
-        """Executes Geo Validation node logic for LangGraph workflow."""
+    async def process(self, state: PipelineSharedState) -> dict[str, Any]:
+        """Executes Geo Validation node logic for LangGraph workflow asynchronously (P-01)."""
         start_time = time.time()
         raw_payload = state.get("raw_payload", {})
 
@@ -66,9 +67,15 @@ class GeoValidationAgent:
             result = self._build_fallback(reason="Invalid numeric coordinates")
             return {"agent_outputs": {"geo_validation": result}}
 
+        # Pune Regional Coordinate Envelope Check (Zero-Hallucination Guard)
+        if not (18.0 <= lat <= 19.0 and 73.0 <= lon <= 74.5):
+            logger.warning(f"[GeoValidator] Coordinates ({lat}, {lon}) outside Pune metropolitan area limits.")
+            result = self._build_fallback(reason="Coordinates outside Pune regional boundary")
+            return {"agent_outputs": {"geo_validation": result}}
+
         # Attempt PostGIS spatial query if database session factory is provided
         if self.db_session_factory is not None:
-            spatial_match = self._query_postgis_ward(lat, lon)
+            spatial_match = await self._query_postgis_ward(lat, lon)
             if spatial_match:
                 logger.info(f"[GeoValidator] PostGIS ST_Covers matched ward '{spatial_match['ward_name']}'.")
                 return {"agent_outputs": {"geo_validation": spatial_match}}
@@ -80,8 +87,8 @@ class GeoValidationAgent:
 
         return {"agent_outputs": {"geo_validation": result}}
 
-    def _query_postgis_ward(self, lat: float, lon: float) -> GeoValidationResult | None:
-        """Queries PostGIS database using ST_Covers over jurisdiction geometry."""
+    async def _query_postgis_ward(self, lat: float, lon: float) -> GeoValidationResult | None:
+        """Queries PostGIS database using ST_Covers over jurisdiction geometry asynchronously (P-01)."""
         factory = self.db_session_factory
         if factory is None:
             return None
@@ -94,19 +101,32 @@ class GeoValidationAgent:
                 AND ST_Covers(jurisdiction_geometry, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
                 LIMIT 1;
             """)
-            with factory() as session:  # type: Session
-                row = session.execute(query, {"lat": lat, "lon": lon}).fetchone()
-                if row:
-                    return {
-                        "ward_id": str(row[0]),
-                        "ward_name": str(row[1]),
-                        "zone_name": str(row[2]) if len(row) > 2 else "PMC Main Zone",
-                        "boundary_matched": True,
-                        "confidence": 0.99,
-                    }
+            session_ctx = factory()
+            row = None
+
+            if hasattr(session_ctx, "__aenter__"):
+                async with session_ctx as session:
+                    res = await session.execute(query, {"lat": lat, "lon": lon})
+                    row = res.fetchone()
+            else:
+                def _sync_query() -> Any:
+                    with session_ctx as session:
+                        return session.execute(query, {"lat": lat, "lon": lon}).fetchone()
+
+                row = await asyncio.to_thread(_sync_query)
+
+            if row:
+                return {
+                    "ward_id": str(row[0]),
+                    "ward_name": str(row[1]),
+                    "zone_name": str(row[2]) if len(row) > 2 else "PMC Main Zone",
+                    "boundary_matched": True,
+                    "confidence": 0.99,
+                }
         except Exception as err:
             logger.warning(f"[GeoValidator] PostGIS query failed ({err}), dropping back to PMC bounding box match.")
         return None
+
 
     def _query_pmc_bounding_box(self, lat: float, lon: float) -> GeoValidationResult:
         """Determines ward boundary match using PMC polygon bounding boxes."""

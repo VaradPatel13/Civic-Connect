@@ -39,11 +39,11 @@ class NotificationRepository:
             notification_type=notification_type,
             priority=priority,
             channel=channel,
-            delivery_status=DeliveryStatus.DELIVERED,
-            delivered_at=datetime.now(UTC),
+            delivery_status=DeliveryStatus.QUEUED,  # B-02: Start as QUEUED, not DELIVERED
             deep_link=deep_link,
             payload=payload,
         )
+
         self.session.add(notification)
         await self.session.commit()
         await self.session.refresh(notification)

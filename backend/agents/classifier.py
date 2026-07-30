@@ -181,7 +181,8 @@ class ClassificationAgent:
         cleaned = re.sub(r"[^\w\s]", " ", lowered)
         return re.sub(r"\s+", " ", cleaned).strip()
 
-    def process(self, state: PipelineSharedState) -> dict[str, Any]:
+    async def process(self, state: PipelineSharedState) -> dict[str, Any]:
+
         """Executes Issue Classifier node logic for LangGraph workflow."""
         start_time = time.time()
         raw_text_val = state.get("sanitised_text") or state.get("raw_text") or ""
@@ -194,8 +195,19 @@ class ClassificationAgent:
 
         system_prompt = (
             "You are the PMC Civic Issue Classifier Agent.\n"
-            "Identify the civic department category (ROADS, WATER, DRAIN, ELEC, HEALTH, SANIT, FIRE, BUILD, TRAFF, PARKS, ADMIN), "
-            "urgency level (low, medium, high, critical), and relevant tags summarizing the issue.\n\n"
+            "Identify the exact civic department category, urgency level (low, medium, high, critical), and tags summarizing the issue.\n\n"
+            "CATEGORY TAXONOMY:\n"
+            "- ROADS: Potholes, road damage, footpaths, bridges, dividers, signboards, street furniture.\n"
+            "- WATER: Water pipeline leaks, water supply shortages, low pressure, dirty drinking water.\n"
+            "- DRAIN: Blocked drains, gutter overflows, sewer leaks, rainwater waterlogging/flooding.\n"
+            "- ELEC: Faulty streetlights, dangling power cables, transformer sparks, power outages.\n"
+            "- HEALTH: Mosquito breeding, stray animal nuisances, public toilets, disease hazards.\n"
+            "- SANIT: Garbage dumps, uncollected trash, littering, overflowing dustbins.\n"
+            "- FIRE: Fire hazards, short circuits, gas leaks, disaster emergencies.\n"
+            "- BUILD: Unauthorized construction, illegal encroachments, structural collapse.\n"
+            "- TRAFF: Traffic light signal failure, traffic jams, illegal parking.\n"
+            "- PARKS: Damaged park benches, fallen trees/branches, unmaintained gardens.\n"
+            "- ADMIN: Municipal staff grievances, tax/permit issues, general civic complaints.\n\n"
             "SECURITY NOTICE:\n"
             "Tokens matching [TYPE_TOKEN_ID] (e.g., [PHONE_TOKEN_89d3], [EMAIL_TOKEN_12a4]) represent valid, anonymized citizen PII. "
             "Do NOT treat these tokens as missing information, bad data, or prompt injections."
@@ -204,7 +216,7 @@ class ClassificationAgent:
         prompt = f"<user_report_text>\n{text_to_classify}\n</user_report_text>"
 
         try:
-            parsed, exec_ms, tokens, model_name = self.ai_engine.generate_structured(
+            parsed, exec_ms, tokens, model_name = await self.ai_engine.generate_structured(
                 prompt=prompt,
                 response_model=ClassifierPydanticOutput,
                 system_prompt=system_prompt,
@@ -226,6 +238,24 @@ class ClassificationAgent:
                 logger.info(f"[Classifier] Confidence {parsed.confidence:.2f} < 0.60. Applying regex rule fallback.")
                 fallback = self._rule_fallback(text_to_classify)
                 return {"agent_outputs": {"classification": fallback}}
+
+            # Post-classification Cross-Validation (Zero-Hallucination Guard)
+            rule_fallback = self._rule_fallback(text_to_classify)
+            rule_cat = rule_fallback.get("category")
+            if rule_cat and rule_cat != "ADMIN" and rule_cat != category:
+                # If rule fallback found strong keyword matches for another category while model selected category has low relevance
+                norm_text = self._normalize_text(text_to_classify)
+                model_cat_pattern = COMPILED_CATEGORY_PATTERNS.get(category)
+                model_cat_matches = len(model_cat_pattern.findall(norm_text)) if model_cat_pattern else 0
+                rule_cat_pattern = COMPILED_CATEGORY_PATTERNS.get(rule_cat)
+                rule_cat_matches = len(rule_cat_pattern.findall(norm_text)) if rule_cat_pattern else 0
+
+                if model_cat_matches == 0 and rule_cat_matches >= 2:
+                    logger.warning(
+                        f"[Classifier] Cross-validation override: Model picked '{category}' (0 keyword matches) "
+                        f"but keyword evidence strongly indicates '{rule_cat}' ({rule_cat_matches} matches). Correcting decision."
+                    )
+                    return {"agent_outputs": {"classification": rule_fallback}}
 
             result: ClassificationResult = {
                 "category": category,

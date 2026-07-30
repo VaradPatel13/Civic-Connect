@@ -383,16 +383,16 @@ Rules
 
 ---
 
-# Confidence Policy
+# Confidence & Zero-Hallucination Policy
 
-| Agent | Threshold |
-|--------|----------:|
-| Forensics | 0.70 |
-| Classification | 0.60 |
-| Moderation | 0.80 |
-| Geo Validation | Boundary Match |
+| Agent | Threshold | Zero-Hallucination & Grounding Guard |
+|--------|----------:|--------------------------------------|
+| Forensics | 0.70 | Fails safe requiring review on error/ambiguity |
+| Classification | 0.60 | Post-classification keyword cross-validation |
+| Moderation | 0.80 | Immediate regex interrupt for injection/profanity |
+| Geo Validation | Boundary Match | Pune coordinate envelope (18.0–19.0° N, 73.0–74.5° E) |
 
-Below-threshold outputs require either fallback processing or manual review.
+Below-threshold outputs or cross-validation mismatches trigger deterministic fallback processing or queue for manual review.
 
 ---
 

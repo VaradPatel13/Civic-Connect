@@ -1,4 +1,6 @@
-from pydantic import field_validator
+from typing import Any
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +14,28 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://app:app@localhost:5432/civicconnect"
     redis_url: str = "redis://localhost:6379/0"
 
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:8081",
+        "http://localhost:19006",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8081",
+        "http://127.0.0.1:8000",
+    ]
+    cors_origin_regex: str | None = r"https?://.*"
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                return json.loads(v)
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
+
+
     @field_validator("database_url", mode="before")
     @classmethod
     def assemble_db_connection(cls, v: str) -> str:
@@ -23,13 +47,25 @@ class Settings(BaseSettings):
         return v
 
     jwt_secret: str = "change-me-in-production"
+
+    @model_validator(mode="after")
+    def validate_security_defaults(self) -> "Settings":
+        if not self.debug and (
+            self.jwt_secret in ("change-me-in-production", "secret", "")
+            or "change-me-in-production" in self.jwt_secret
+        ):
+            raise ValueError(
+                "JWT secret must be set to a secure secret key when debug=False (production mode)."
+            )
+        return self
+
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 15
-    refresh_token_expire_days: int = 7
+    access_token_expire_minutes: int = 43200  # 30 days session validity
+    refresh_token_expire_days: int = 60       # 60 days refresh token validity
 
     # ── AI Pipeline & LLM Provider API Keys ───────────────────────────
     ai_provider: str = "nvidia_nim"  # "openrouter", "nvidia_nim", "openai"
-    ai_model: str = ""  # Default fallback model if unspecified
+    ai_model: str = ""
     openrouter_api_key: str = ""
     nvidia_api_key: str = ""
     openai_api_key: str = ""

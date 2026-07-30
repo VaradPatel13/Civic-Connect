@@ -44,6 +44,7 @@ export default function CreateReportScreen() {
   // Pre-filled from camera screen
   const photoUri      = params.photoUri    ?? '';
   const cloudinaryUrl = params.secure_url ?? params.url ?? '';
+  const photoMetadataRaw = params.photoMetadata ?? '';
 
   // ── Auto-detect location on mount ────────────────────────────────────────────
   useEffect(() => {
@@ -75,6 +76,19 @@ export default function CreateReportScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
+      let parsedMetadataList = [];
+      if (cloudinaryUrl && photoMetadataRaw) {
+        try {
+          const parsed = JSON.parse(photoMetadataRaw);
+          parsedMetadataList.push({
+            url: cloudinaryUrl,
+            ...parsed,
+          });
+        } catch {
+          // Ignore JSON parse error if raw metadata is invalid
+        }
+      }
+
       const payload: CreateReportPayload = {
         title:          title.trim(),
         description:    description.trim(),
@@ -83,6 +97,7 @@ export default function CreateReportScreen() {
         longitude:      lng ?? 73.8567,
         address:        address,
         photos:         cloudinaryUrl ? [cloudinaryUrl] : [],
+        photo_metadata: parsedMetadataList,
         language:       'en',
       };
 

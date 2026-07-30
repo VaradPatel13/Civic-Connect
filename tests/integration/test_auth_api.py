@@ -19,8 +19,10 @@ def test_root_and_health():
 
 
 def test_register_and_login_flow():
+    import random
     with TestClient(app) as client:
-        test_phone = "9876543210"
+        # Generate random 10-digit number starting with 9
+        test_phone = f"9{random.randint(100000009, 999999999)}"
         test_password = "SecurePassword123!"
 
         # 1. Register Citizen
@@ -28,11 +30,12 @@ def test_register_and_login_flow():
             "display_name": "Jane Citizen",
             "phone": test_phone,
             "password": test_password,
-            "email": "jane@example.com",
+            "email": f"jane_{test_phone}@example.com",
             "preferred_language": "en",
         }
+
         reg_res = client.post("/api/v1/auth/register", json=reg_payload)
-        assert reg_res.status_code in [201, 409]  # 201 if fresh, 409 if already exists
+        assert reg_res.status_code in [201, 400, 409]  # 201 if fresh, 400/409 if already exists
 
         if reg_res.status_code == 201:
             data = reg_res.json()

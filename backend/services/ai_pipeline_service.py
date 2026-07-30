@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import uuid
 from typing import Any
@@ -6,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.agents.pipeline import create_civic_pipeline_graph
+from backend.core.config import settings
 from backend.models.agent_executions import AgentStatus
 from backend.models.reports import Assignment, AssignmentStatus, ReportStatus
 from backend.repositories.agent_executions import AgentExecutionRepository
@@ -13,6 +15,20 @@ from backend.repositories.departments import DepartmentRepository
 from backend.repositories.reports import ReportRepository
 
 logger = logging.getLogger(__name__)
+
+# Module-level compiled pipeline graph singleton (A-03) — compiled once at import time
+# and reused across all requests to avoid per-request graph compilation overhead.
+_PIPELINE_GRAPH: Any = None
+
+
+def _get_pipeline_graph() -> Any:
+    """Returns the cached compiled LangGraph pipeline, compiling on first call."""
+    global _PIPELINE_GRAPH
+    if _PIPELINE_GRAPH is None:
+        logger.info("[AIPipelineService] Compiling LangGraph pipeline graph (first call).")
+        _PIPELINE_GRAPH = create_civic_pipeline_graph()
+    return _PIPELINE_GRAPH
+
 
 
 class AIPipelineService:
@@ -51,8 +67,9 @@ class AIPipelineService:
             report_id, ReportStatus.PROCESSING, changed_by="ai_orchestrator"
         )
 
-        # 2. Compile and run LangGraph pipeline
-        pipeline_graph = create_civic_pipeline_graph()
+        # 2. Use cached compiled LangGraph pipeline (A-03 — compiled once, reused per request)
+        pipeline_graph = _get_pipeline_graph()
+
         initial_state = {
             "report_id": str(report_id),
             "trace_id": workflow_id,
@@ -72,9 +89,20 @@ class AIPipelineService:
         try:
             final_state = await pipeline_graph.ainvoke(initial_state)
             agent_outputs = final_state.get("agent_outputs", {})
+            pipeline_status = final_state.get("pipeline_status", "COMPLETED")
+            logger.info(f"[AIPipelineService] Workflow finished with status: {pipeline_status}")
         except Exception as exc:
             logger.error(f"[AIPipelineService] LangGraph execution failed: {exc}", exc_info=True)
             agent_outputs = {}
+            pipeline_status = "FAILED"
+            # SD-02: Revert report to PENDING on pipeline failure to prevent stuck-in-PROCESSING state
+            await self.report_repo.update_status(
+                report_id,
+                ReportStatus.PENDING,
+                changed_by="ai_orchestrator",
+                reason="Pipeline execution failed — reverted for retry",
+            )
+            return {"status": "failed", "workflow_id": workflow_id, "error": str(exc)}
 
         # 3. Moderator Agent
         moderation = agent_outputs.get("moderator") or agent_outputs.get("moderation") or {}
@@ -187,11 +215,29 @@ class AIPipelineService:
 
         # 7. Enhancement Agent
         enhancement = agent_outputs.get("enhancement") or {}
+
+        # Update Report model with AI pipeline results (AI-02)
+        report.classification_confidence = float(classification.get("confidence", 0.92))
+        report.moderation_result = moderation if isinstance(moderation, dict) else {"clean": is_clean}
+        report.forensics_result = forensics if isinstance(forensics, dict) else {}
+        report.summary = enhancement.get("summary") or enhancement.get("enhanced_text") or enhancement.get("enhanced_description")
+        report.translated_description = enhancement.get("translated_text") or enhancement.get("translated_description")
+        report.ai_tags = classification.get("keywords") or classification.get("tags") or []
+        report.ward = ward_name
+        report.zone = zone_name
+        if forensics.get("duplicate_detected"):
+            report.is_duplicate = True
+            if forensics.get("matching_report_id"):
+                with contextlib.suppress(ValueError):
+                    report.duplicate_of_id = UUID(str(forensics["matching_report_id"]))
+        self.session.add(report)
+        await self.session.commit()
+
         enh_exec = await self.agent_repo.start_execution(
             report_id=report_id,
             workflow_id=workflow_id,
             agent_name="enhancement_agent",
-            model_used="llama-3.1-70b",
+            model_used=settings.ai_model or settings.ai_provider,
             input_snapshot={"text": report.description},
         )
         await self.agent_repo.complete_execution(
@@ -201,12 +247,13 @@ class AIPipelineService:
             output_snapshot=enhancement,
         )
 
+
         # 8. Smart Department Routing & Assignment
         r_exec = await self.agent_repo.start_execution(
             report_id=report_id,
             workflow_id=workflow_id,
             agent_name="routing_agent",
-            model_used="gemini-1.5-pro",
+            model_used=settings.ai_model or settings.ai_provider,
             input_snapshot={"category": category_str, "address": report.address},
         )
 
@@ -214,6 +261,7 @@ class AIPipelineService:
         if not dept:
             depts = await self.dept_repo.list_departments()
             dept = depts[0] if depts else None
+
 
         if dept:
             assignment = Assignment(

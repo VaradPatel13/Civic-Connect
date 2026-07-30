@@ -36,6 +36,21 @@ export interface UploadAsset {
   height:     number | null;
 }
 
+// ── PhotoMetadata payload (sent to backend) ────────────────────────────────────
+export interface PhotoMetadata {
+  url:             string;
+  capture_source:  'camera' | 'gallery';
+  latitude?:       number;
+  longitude?:      number;
+  gps_accuracy_m?: number;
+  captured_at?:    string;
+  sha256_hash?:    string;
+  hmac_signature?: string;
+  device_model?:   string;
+  os_version?:     string;
+  app_version?:    string;
+}
+
 // ── CreateReport payload (sent to backend) ───────────────────────────────────
 export interface CreateReportPayload {
   title:          string;
@@ -45,6 +60,7 @@ export interface CreateReportPayload {
   longitude:      number;
   address:        string;
   photos:         string[];   // Cloudinary secure URLs
+  photo_metadata?: PhotoMetadata[];
   language:       string;
 }
 

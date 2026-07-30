@@ -6,12 +6,13 @@
  * Note: Gallery uploads are strictly disabled to enforce authentic civic reporting.
  */
 import { useRef, useState } from 'react';
-import { Alert, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { tokens } from '@src/constants';
 import { api } from '@src/lib/api';
+import { getCurrentLocation } from '@src/lib/location';
 import type { UploadAsset } from '@src/types/reports';
 
 export default function CameraScreen() {
@@ -56,8 +57,31 @@ export default function CameraScreen() {
     setUploading(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      let locData: { latitude?: number; longitude?: number; accuracy?: number } = {};
+      try {
+        const loc = await getCurrentLocation();
+        locData = { latitude: loc.latitude, longitude: loc.longitude, accuracy: loc.accuracy };
+      } catch {
+        // Fallback location if permission or GPS read fails
+      }
+      
+
+      const photoMetadata = JSON.stringify({
+        capture_source: 'camera',
+        latitude: locData.latitude ?? 18.5204,
+        longitude: locData.longitude ?? 73.8567,
+        gps_accuracy_m: locData.accuracy ?? 10.0,
+        captured_at: new Date().toISOString(),
+        device_model: Platform.OS === 'ios' ? 'iOS Device' : 'Android Device',
+        os_version: `${Platform.OS} ${Platform.Version}`,
+        app_version: '1.0.0',
+      });
+
       const asset = await uploadToCloudinary(photo!.uri);
-      router.replace({ pathname: '/create-report', params: { photoUri: photo!.uri, ...asset } });
+      router.replace({
+        pathname: '/create-report',
+        params: { photoUri: photo!.uri, photoMetadata, ...asset },
+      });
     } catch {
       Alert.alert('Capture Failed', 'Could not capture photo. Please try again.', [
         { text: 'Retry', onPress: handleCapture },

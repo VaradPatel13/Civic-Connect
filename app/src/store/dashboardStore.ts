@@ -8,7 +8,7 @@
  */
 import { create } from 'zustand';
 import type { Report, DashboardStats, TrendingCategory } from '@src/types';
-import { api } from '@src/lib/api';
+import { api, ApiError } from '@src/lib/api';
 
 interface DashboardResponse {
   stats?: DashboardStats;
@@ -56,8 +56,18 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         lastFetched: Date.now(),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load dashboard';
-      set({ isLoading: false, error: message });
+      const isAuthError = err instanceof ApiError && err.status === 401;
+      const message = isAuthError
+        ? 'Session expired. Please log in again.'
+        : err instanceof Error ? err.message : 'Failed to load dashboard';
+      // Preserve existing data — only set error without wiping reports
+      set((state) => ({
+        isLoading: false,
+        error: message,
+        stats: state.stats,
+        reports: state.reports,
+        trending: state.trending,
+      }));
     }
   },
 

@@ -19,19 +19,14 @@ logger = logging.getLogger(__name__)
 class NotificationAgent:
     """Agent that formats notifications and manages citizen reward points."""
 
-    def process(self, state: PipelineSharedState) -> dict[str, Any]:
-        """Executes Notifier node logic for LangGraph workflow."""
+    async def process(self, state: PipelineSharedState) -> dict[str, Any]:
+        """Executes Notifier node logic for LangGraph workflow. Sets pipeline_status=COMPLETED (AI-09)."""
+        from backend.agents.state import get_agent_output
         start_time = time.time()
         report_id = str(state.get("report_id") or "UNKNOWN")
-        agent_outputs = state.get("agent_outputs") or {}
-        agent_dict = agent_outputs if isinstance(agent_outputs, dict) else {}
-
-        classification = agent_dict.get("classification") if isinstance(agent_dict, dict) else {}
-        class_dict = classification if isinstance(classification, dict) else {}
-        routing = agent_dict.get("routing") if isinstance(agent_dict, dict) else {}
-        routing_dict = routing if isinstance(routing, dict) else {}
-        geo_val = agent_dict.get("geo_validation") if isinstance(agent_dict, dict) else {}
-        geo_dict = geo_val if isinstance(geo_val, dict) else {}
+        class_dict = get_agent_output(state, "classification")
+        routing_dict = get_agent_output(state, "routing")
+        geo_dict = get_agent_output(state, "geo_validation")
 
         category = str(class_dict.get("category", "General"))
         ward_name = str(geo_dict.get("ward_name", "PMC Ward"))
@@ -42,11 +37,16 @@ class NotificationAgent:
         notification_payload = {
             "title": f"Report #{report_id[:8]} Received",
             "body": f"Your {category} report in {ward_name} has been assigned to {dept_name}. Estimated SLA: {sla_hours} hours.",
-            "points_awarded": 15,  # Award 15 Civic Points for submitting a valid verified report
+            "points_awarded": 15,  # Decorative only — actual points awarded by ReportService
             "status": "DISPATCHED",
         }
 
         execution_ms = (time.time() - start_time) * 1000.0
-        logger.info(f"[Notifier] Created citizen notification and awarded 15 points in {execution_ms:.2f}ms.")
+        logger.info(f"[Notifier] Created citizen notification in {execution_ms:.2f}ms.")
 
-        return {"agent_outputs": {"notification": notification_payload}}
+        return {
+            "pipeline_status": "COMPLETED",
+            "agent_outputs": {"notification": notification_payload},
+        }
+
+

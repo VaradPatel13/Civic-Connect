@@ -39,9 +39,16 @@ class ModeratorPydanticOutput(BaseModel):
 # Regex rules for immediate profanity and prompt injection detection
 INJECTION_KEYWORDS = [
     r"ignore previous instructions",
+    r"forget previous instructions",
+    r"forget all instructions",
     r"system prompt",
+    r"system message",
     r"you are now",
     r"override rules",
+    r"act as admin",
+    r"print secret",
+    r"union select",
+    r"drop table",
     r"eval\(",
     r"exec\(",
     r"<script",
@@ -58,7 +65,8 @@ class ModerationAgent:
     def __init__(self, ai_engine: BaseAIEngine | UnifiedAIEngine | Any | None = None) -> None:
         self.ai_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(provider="openrouter")
 
-    def process(self, state: PipelineSharedState) -> dict[str, Any]:
+    async def process(self, state: PipelineSharedState) -> dict[str, Any]:
+
         """Executes Content Moderator node logic for LangGraph workflow."""
         start_time = time.time()
         text_to_screen: str = str(state.get("sanitised_text") or state.get("raw_text") or "")
@@ -84,7 +92,7 @@ class ModerationAgent:
             )
             prompt = f"<user_report_text>\n{text_to_screen}\n</user_report_text>"
 
-            parsed, exec_ms, tokens, model_name = self.ai_engine.generate_structured(
+            parsed, exec_ms, tokens, model_name = await self.ai_engine.generate_structured(
                 prompt=prompt,
                 response_model=ModeratorPydanticOutput,
                 system_prompt=system_prompt,
@@ -104,12 +112,13 @@ class ModerationAgent:
             return {"agent_outputs": {"moderation": result}}
 
         except Exception as err:
-            logger.error(f"[Moderator] Moderation LLM call failed ({err}). Defaulting to clean with review flag.")
+            logger.error(f"[Moderator] Moderation LLM call failed ({err}). Failing SAFE — defaulting to unclean requiring human review.")
             fallback: ModerationResult = {
-                "clean": True,
-                "flags": ["moderation_fallback"],
-                "toxicity_score": 0.0,
-                "confidence": 0.50,
-                "requires_human_review": False,
+                "clean": False,
+                "flags": ["moderation_unavailable"],
+                "toxicity_score": 0.5,
+                "confidence": 0.0,
+                "requires_human_review": True,
             }
             return {"agent_outputs": {"moderation": fallback}}
+

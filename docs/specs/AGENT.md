@@ -354,20 +354,20 @@ Agents never modify another agent's data.
 
 ---
 
-# Confidence Rules
+# Confidence & Verification Rules
 
-| Agent | Threshold |
-|---------|----------|
-| Forensics | 0.70 |
-| Classifier | 0.60 |
-| Moderator | 0.80 |
-| Geo | Boundary validation |
+| Agent | Threshold | Grounding & Zero-Hallucination Policy |
+|---------|----------|----------------------------------------|
+| Forensics | 0.70 | Fails safe requiring review on error/ambiguity |
+| Classifier | 0.60 | Post-classification cross-validation against keyword evidence |
+| Moderator | 0.80 | Immediate regex interrupt for prompt injection & profanity |
+| Geo | Boundary validation | Pune regional coordinate envelope guard (18.0–19.0° N, 73.0–74.5° E) |
 
-Below threshold
+Below threshold or cross-validation failure:
 
 Do not silently continue.
 
-Use fallback or request review.
+Use deterministic fallback or request human admin review.
 
 ---
 

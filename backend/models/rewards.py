@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -74,6 +75,12 @@ class RewardTransaction(Base, UUIDMixin, TimestampMixin):
     """
 
     __tablename__ = "reward_transactions"
+    __table_args__ = (
+        CheckConstraint("new_balance = previous_balance + points", name="chk_reward_tx_balance_calc"),
+        CheckConstraint("new_balance >= 0", name="chk_reward_tx_new_balance_non_negative"),
+        CheckConstraint("previous_balance >= 0", name="chk_reward_tx_prev_balance_non_negative"),
+    )
+
 
     # ── Foreign keys ───────────────────────────────────────────────────
     citizen_id: Mapped[uuid.UUID] = mapped_column(

@@ -1,10 +1,11 @@
 from collections.abc import Sequence
+from urllib.parse import urlparse
 from uuid import UUID
 
 from geoalchemy2.elements import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import selectinload
 
 from backend.models.reports import (
     IssueCategory,
@@ -69,14 +70,15 @@ class ReportRepository:
         stmt = (
             select(Report)
             .options(
-                joinedload(Report.photos),
-                joinedload(Report.status_logs),
-                joinedload(Report.assignments),
+                selectinload(Report.photos),
+                selectinload(Report.status_logs),
+                selectinload(Report.assignments),
+                selectinload(Report.agent_executions),
             )
             .where(Report.id == report_id)
         )
         result = await self.session.execute(stmt)
-        return result.scalars().unique().first()
+        return result.scalars().first()
 
     async def list_reports(
         self,
@@ -85,11 +87,19 @@ class ReportRepository:
         category: IssueCategory | None = None,
         skip: int = 0,
         limit: int = 20,
+        include_details: bool = False,
     ) -> Sequence[Report]:
-        stmt = select(Report).options(
-            joinedload(Report.photos),
-            joinedload(Report.status_logs),
-            joinedload(Report.assignments),
+        # Always eagerly load ALL relationships required by ReportResponse to
+        # prevent MissingGreenlet errors when SQLAlchemy tries to lazy-load
+        # inside an async serialization context.
+        stmt = (
+            select(Report)
+            .options(
+                selectinload(Report.photos),
+                selectinload(Report.status_logs),
+                selectinload(Report.assignments),
+                selectinload(Report.agent_executions),
+            )
         )
         if citizen_id:
             stmt = stmt.where(Report.citizen_id == citizen_id)
@@ -100,7 +110,9 @@ class ReportRepository:
 
         stmt = stmt.order_by(Report.created_at.desc()).offset(skip).limit(limit)
         result = await self.session.execute(stmt)
-        return result.scalars().unique().all()
+        return result.scalars().all()
+
+
 
     async def update_status(
         self,
@@ -128,10 +140,18 @@ class ReportRepository:
         return await self.get_by_id(report_id)
 
     async def add_photo(self, report_id: UUID, url: str, public_id: str = "") -> Photo:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(f"Invalid photo URL format or scheme: '{url}'")
+
+        derived_public_id = public_id or (parsed.path.split("/")[-1] if parsed.path else "photo")
         photo = Photo(
-            report_id=report_id, cloudinary_url=url, public_id=public_id or url.split("/")[-1]
+            report_id=report_id,
+            cloudinary_url=url,
+            public_id=derived_public_id,
         )
         self.session.add(photo)
         await self.session.commit()
         await self.session.refresh(photo)
         return photo
+

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.models.reports import IssueCategory, ReportStatus, UrgencyLevel
 
@@ -39,6 +39,34 @@ class AssignmentResponse(BaseModel):
     routing_reason: str | None = None
 
 
+class AgentExecutionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    agent_name: str
+    model_used: str | None = None
+    status: str
+    confidence: float | None = None
+    execution_ms: int | None = None
+    output_snapshot: dict[str, Any] | None = None
+    started_at: datetime
+    ended_at: datetime | None = None
+
+
+class PhotoMetadata(BaseModel):
+    url: str
+    capture_source: str = "camera"  # "camera" or "gallery"
+    latitude: float | None = None
+    longitude: float | None = None
+    gps_accuracy_m: float | None = None
+    captured_at: str | None = None
+    sha256_hash: str | None = None
+    hmac_signature: str | None = None
+    device_model: str | None = None
+    os_version: str | None = None
+    app_version: str | None = None
+
+
 class ReportCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=255)
     description: str = Field(..., min_length=10)
@@ -49,6 +77,18 @@ class ReportCreate(BaseModel):
     address: str | None = None
     language: str = "en"
     photos: list[str] = []  # URLs
+    photo_metadata: list[PhotoMetadata] = []
+
+    @field_validator("photos")
+    @classmethod
+    def validate_photos(cls, v: list[str]) -> list[str]:
+        for url in v:
+            if not isinstance(url, str) or not (url.startswith("http://") or url.startswith("https://")):
+                raise ValueError(
+                    f"Invalid photo URL '{url}'. Photo URLs must start with http:// or https://"
+                )
+        return v
+
 
 
 class ReportUpdate(BaseModel):
@@ -92,3 +132,4 @@ class ReportResponse(BaseModel):
     photos: list[PhotoResponse] = []
     status_logs: list[StatusLogResponse] = []
     assignments: list[AssignmentResponse] = []
+    agent_executions: list[AgentExecutionResponse] = []

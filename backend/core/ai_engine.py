@@ -15,7 +15,13 @@ from typing import Any, TypeVar
 from pydantic import BaseModel
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
+from backend.core.circuit_breaker import (
+    CircuitBreaker,
+    nim_circuit_breaker,
+    openrouter_circuit_breaker,
+)
 from backend.core.config import settings
+from backend.core.rate_limiter import RedisTokenBucketLimiter
 
 try:
     import json_repair  # type: ignore
@@ -24,26 +30,41 @@ except ImportError:
     HAS_JSON_REPAIR = False
 
 try:
-    from openai import OpenAI
+    from openai import AsyncOpenAI, OpenAI
+    from openai import (
+        AuthenticationError as OpenAIAuthError,
+    )
+    from openai import (
+        BadRequestError as OpenAIBadRequestError,
+    )
+    from openai import (
+        PermissionDeniedError as OpenAIPermissionError,
+    )
 except ImportError:
     OpenAI = None  # type: ignore
+    AsyncOpenAI = None  # type: ignore
+    OpenAIAuthError = Exception  # type: ignore
+    OpenAIBadRequestError = Exception  # type: ignore
+    OpenAIPermissionError = Exception  # type: ignore
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
 
+
 class BaseAIEngine:
     """Abstract Base Class for AI Engine Providers."""
 
-    def generate_structured(
+    async def generate_structured(
         self,
         prompt: str,
         response_model: type[T],
         system_prompt: str | None = None,
         temperature: float = 0.2,
+        image_urls: list[str] | None = None,
     ) -> tuple[T, float, int, str]:
-        """Generates structured Pydantic response.
+        """Generates structured Pydantic response (async).
 
         Returns:
             (parsed_model, execution_ms, total_tokens, model_name_used)
@@ -56,7 +77,7 @@ class UnifiedAIEngine(BaseAIEngine):
 
     def __init__(
         self,
-        provider: str | None = None,  # "openrouter", "nvidia_nim", "openai"
+        provider: str | None = None,
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
@@ -66,11 +87,22 @@ class UnifiedAIEngine(BaseAIEngine):
         self.base_url = base_url or self._resolve_base_url()
         self.model_name = model or self._resolve_default_model()
 
-        if OpenAI is not None and self.api_key:
-            self.client: Any = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        self.rate_limiter = RedisTokenBucketLimiter()
+        self.circuit_breaker = self._resolve_circuit_breaker()
+
+        # Use AsyncOpenAI to avoid blocking the event loop (A-01)
+        if AsyncOpenAI is not None and self.api_key:
+            self.client: Any = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
         else:
             self.client = None
-            logger.warning(f"OpenAI SDK or API Key missing for provider '{self.provider}'. Client uninitialized.")
+            logger.warning(f"AsyncOpenAI SDK or API Key missing for provider '{self.provider}'. Client uninitialized.")
+
+    def _resolve_circuit_breaker(self) -> CircuitBreaker:
+        if self.provider == "nvidia_nim":
+            return nim_circuit_breaker
+        elif self.provider == "openrouter":
+            return openrouter_circuit_breaker
+        return CircuitBreaker(name=self.provider, failure_threshold=5, recovery_timeout_seconds=30.0)
 
     def _resolve_api_key(self) -> str:
         if self.provider == "nvidia_nim":
@@ -99,28 +131,51 @@ class UnifiedAIEngine(BaseAIEngine):
         return "gpt-4o-mini"
 
     @retry(
-        retry=retry_if_not_exception_type((RuntimeError, ValueError)),
+        retry=retry_if_not_exception_type((
+            RuntimeError,
+            ValueError,
+            OpenAIAuthError,
+            OpenAIPermissionError,
+            OpenAIBadRequestError,
+        )),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=6),
         reraise=True,
     )
-    def generate_structured(
+    async def generate_structured(
         self,
         prompt: str,
         response_model: type[T],
         system_prompt: str | None = None,
         temperature: float = 0.2,
+        image_urls: list[str] | None = None,
     ) -> tuple[T, float, int, str]:
         start_time = time.time()
 
-        client = self.client
-        if client is None:
-            raise RuntimeError(f"AI Engine client for provider '{self.provider}' is not configured.")
+        if not self.circuit_breaker.allow_execution():
+            raise RuntimeError(
+                f"Circuit breaker '{self.circuit_breaker.name}' is OPEN due to high failure rate. Fast-failing LLM request."
+            )
 
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        # Consume rate limiter token for provider throttling (AI-08)
+        rate_key = f"ai_engine:{self.provider}"
+        allowed, wait_sec = self.rate_limiter.consume(
+            rate_key=rate_key, max_tokens=50, refill_rate=10.0
+        )
+        if not allowed and wait_sec > 0:
+            import asyncio
+            logger.info(
+                f"[AIEngine] Rate limit throttled for provider '{self.provider}'. "
+                f"Pausing for {wait_sec:.2f}s."
+            )
+            await asyncio.sleep(min(wait_sec, 2.0))
+
+        client = self.client
+
+        if client is None:
+            err = RuntimeError(f"AI Engine client for provider '{self.provider}' is not configured.")
+            self.circuit_breaker.record_failure(err)
+            raise err
 
         # Construct clean JSON template for LLM prompt
         field_specs = [
@@ -131,7 +186,26 @@ class UnifiedAIEngine(BaseAIEngine):
         json_instruction = (
             f"\n\nReturn ONLY a valid JSON object strictly matching this exact key structure:\n{json_template}\nDo not wrap keys inside a 'properties' object or include any markdown explanations."
         )
-        messages[-1]["content"] += json_instruction
+
+        user_prompt_text = prompt + json_instruction
+
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        # Multimodal Vision Payload Construction
+        valid_image_urls = [
+            url for url in (image_urls or [])
+            if isinstance(url, str) and (url.startswith("http://") or url.startswith("https://") or url.startswith("data:image/"))
+        ]
+
+        if valid_image_urls:
+            user_content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt_text}]
+            for img_url in valid_image_urls:
+                user_content.append({"type": "image_url", "image_url": {"url": img_url}})
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages.append({"role": "user", "content": user_prompt_text})
 
         extra_headers: dict[str, str] = {}
         if self.provider == "openrouter":
@@ -148,12 +222,25 @@ class UnifiedAIEngine(BaseAIEngine):
 
         # Attempt API call with response_format, fallback without response_format if provider rejects it
         try:
-            response = client.chat.completions.create(
-                response_format={"type": "json_object"}, **kwargs
-            )
-        except Exception as api_err:
-            logger.warning(f"[AIEngine] response_format not supported by provider ({api_err}), trying without json_object mode.")
-            response = client.chat.completions.create(**kwargs)
+            try:
+                response = await client.chat.completions.create(
+                    response_format={"type": "json_object"}, **kwargs
+                )
+            except Exception as api_err:
+                logger.warning(f"[AIEngine] response_format or vision payload rejected ({api_err}), attempting fallback request format.")
+                if valid_image_urls:
+                    messages_fallback: list[dict[str, Any]] = []
+                    if system_prompt:
+                        messages_fallback.append({"role": "system", "content": system_prompt})
+                    messages_fallback.append({"role": "user", "content": f"{user_prompt_text}\n\nAttached Media URLs:\n" + "\n".join(valid_image_urls)})
+                    kwargs["messages"] = messages_fallback
+
+                response = await client.chat.completions.create(**kwargs)
+            self.circuit_breaker.record_success()
+        except Exception as exc:
+            self.circuit_breaker.record_failure(exc)
+            raise
+
 
         raw_content = response.choices[0].message.content or "{}"
         total_tokens = response.usage.total_tokens if response.usage else 0

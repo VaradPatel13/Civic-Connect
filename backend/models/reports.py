@@ -28,6 +28,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -141,8 +142,13 @@ class Report(Base, UUIDMixin, TimestampMixin):
     """
 
     __tablename__ = "reports"
+    __table_args__ = (
+        Index("idx_reports_created_at", "created_at"),
+        Index("idx_reports_citizen_created_at", "citizen_id", "created_at"),
+    )
 
     # ── Foreign keys ───────────────────────────────────────────────────
+
     citizen_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("citizens.id", ondelete="CASCADE"),

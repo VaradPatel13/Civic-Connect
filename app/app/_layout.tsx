@@ -27,6 +27,10 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="signup" />
+        <Stack.Screen name="verify-otp" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="report-details" />
         <Stack.Screen name="create-report" options={{ presentation: 'modal' }} />

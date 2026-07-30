@@ -32,13 +32,12 @@ class EnhancementAgent:
     def __init__(self, ai_engine: BaseAIEngine | UnifiedAIEngine | Any | None = None) -> None:
         self.ai_engine: BaseAIEngine | Any = ai_engine or UnifiedAIEngine(provider="openrouter")
 
-    def process(self, state: PipelineSharedState) -> dict[str, Any]:
+    async def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Report Enhancer node logic for LangGraph workflow."""
+        from backend.agents.state import get_agent_output
         start_time = time.time()
         text_content: str = str(state.get("sanitised_text") or state.get("raw_text") or "")
-        agent_outputs = state.get("agent_outputs") or {}
-        classification = agent_outputs.get("classification") if isinstance(agent_outputs, dict) else {}
-        classification_dict = classification if isinstance(classification, dict) else {}
+        classification_dict = get_agent_output(state, "classification")
 
         category: str = str(classification_dict.get("category", "ADMIN"))
         urgency: str = str(classification_dict.get("urgency", "medium"))
@@ -54,7 +53,7 @@ class EnhancementAgent:
         )
 
         try:
-            parsed, exec_ms, tokens, model_name = self.ai_engine.generate_structured(
+            parsed, exec_ms, tokens, model_name = await self.ai_engine.generate_structured(
                 prompt=prompt,
                 response_model=EnhancerPydanticOutput,
                 system_prompt=system_prompt,
@@ -79,3 +78,4 @@ class EnhancementAgent:
                 "dept_notes": "Inspect reported location and assess field repair requirements.",
             }
             return {"agent_outputs": {"enhancement": fallback}}
+

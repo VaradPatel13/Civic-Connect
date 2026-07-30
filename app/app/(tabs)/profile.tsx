@@ -7,8 +7,11 @@
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+
 import { tokens } from '@src/constants';
+import { useAuthStore } from '@src/store/useAuthStore';
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -26,8 +29,18 @@ function Masthead() {
 }
 
 function ProfileCard() {
-  // TODO: wire to real user auth store
-  const initials = 'VP';
+  const user = useAuthStore((state) => state.user);
+  const name = user?.display_name ?? 'Citizen';
+  const email = user?.phone ?? 'varad.patel@example.com';
+  const role = user?.role ?? 'Citizen';
+
+  const initials = name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+
   return (
     <View style={{
       marginHorizontal: 20,
@@ -53,21 +66,21 @@ function ProfileCard() {
         justifyContent: 'center',
       }}>
         <Text style={{ fontSize: 24, fontWeight: '800', color: tokens.primary.DEFAULT, letterSpacing: -0.5 }}>
-          {initials}
+          {initials || 'C'}
         </Text>
       </View>
 
       {/* Info */}
       <View style={{ flex: 1 }}>
         <Text style={{ color: tokens.text.primary, fontSize: 18, fontWeight: '800', marginBottom: 2 }}>
-          Varad Patel
+          {name}
         </Text>
         <Text style={{ color: tokens.text.secondary, fontSize: 13, marginBottom: 6 }}>
-          varad.patel@example.com
+          {email}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <View style={{ backgroundColor: tokens.primary.DEFAULT, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 }}>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>Citizen</Text>
+            <Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>{role}</Text>
           </View>
         </View>
       </View>
@@ -162,13 +175,23 @@ function SettingsGroup({ title, items }: { title?: string; items: { label: strin
 }
 
 function SignOutButton() {
+  const logout = useAuthStore((state) => state.logout);
+  const router = useRouter();
+
   return (
     <View style={{ marginHorizontal: 20, marginTop: 24, marginBottom: 10 }}>
       <TouchableOpacity
         activeOpacity={0.75}
         onPress={() => Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign Out', style: 'destructive', onPress: () => {} },
+          {
+            text: 'Sign Out',
+            style: 'destructive',
+            onPress: async () => {
+              await logout();
+              router.replace('/login');
+            },
+          },
         ])}
         style={{
           backgroundColor: tokens.error.light,

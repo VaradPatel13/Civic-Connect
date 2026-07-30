@@ -6,14 +6,17 @@ requests a signed upload preset and uploads directly to Cloudinary.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Annotated
 
 from cloudinary.exceptions import Error as CloudinaryError
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
+from backend.api.deps import get_current_user
 from backend.core.config import settings
+from backend.models.citizens import Citizen
 from backend.services.upload_service import UploadResult, upload_file
 
 logger = logging.getLogger(__name__)
@@ -64,7 +67,9 @@ class UploadResponse(BaseModel):
 )
 async def upload_asset(
     file: Annotated[UploadFile, File(description="Image file (max 10 MB)")],
+    current_user: Citizen = Depends(get_current_user),
 ) -> UploadResponse:
+
     """
     Receive a file from the mobile client and upload it to Cloudinary.
 
@@ -102,23 +107,25 @@ async def upload_asset(
 
     try:
         filename = file.filename or "upload"
-        result = upload_file(content, filename)
+        result = await asyncio.to_thread(upload_file, content, filename)
         return UploadResponse.from_result(result)
+
     except RuntimeError as e:
         logger.warning("Upload service not configured: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(e),
+            detail="Media upload service is not configured.",
         ) from e
     except CloudinaryError as e:
         logger.exception("Cloudinary upload failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Cloudinary upload failed: {e}",
+            detail="Cloudinary upload failed.",
         ) from e
     except Exception as e:
         logger.exception("Unexpected upload failure: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Upload failed: {str(e)}",
+            detail="Upload failed.",
         ) from e
+

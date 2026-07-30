@@ -37,12 +37,50 @@ def merge_agent_outputs(
     return merged
 
 
+def get_agent_output(state: PipelineSharedState, agent_key: str) -> dict[str, Any]:
+    """Safely retrieve an agent's output dictionary from shared pipeline state (CQ-03).
+
+    Eliminates repetitive defensive type-checking boilerplate across all downstream agents.
+    """
+    outputs = state.get("agent_outputs") or {}
+    result = outputs.get(agent_key)
+    return result if isinstance(result, dict) else {}
+
+
+# Canonical mapping from PMC classifier codes → IssueCategory DB enum values (CQ-02)
+PMC_TO_ISSUE_CATEGORY: dict[str, str] = {
+    "ROADS": "roads",
+    "WATER": "water_supply",
+    "DRAIN": "drainage",
+    "ELEC": "street_lighting",
+    "HEALTH": "public_health",
+    "SANIT": "waste_management",
+    "FIRE": "public_health",       # nearest semantic match
+    "BUILD": "encroachment",
+    "TRAFF": "traffic_infrastructure",
+    "PARKS": "parks",
+    "ADMIN": "other",
+}
+
+
 class ForensicsResult(TypedDict, total=False):
     authentic: bool
+    supports_report: bool
+    reported_issue_visible: bool
+    issue_category_match: bool
+    source_type: str
+    quality_ok: bool
+    ai_generated: bool
+    manipulated: bool
     confidence: float
     reason: str
     duplicate_detected: bool
     matching_report_id: str | None
+    capture_source: str | None
+    signature_valid: bool | None
+    location_uncertain: bool | None
+    capture_distance_km: float | None
+    trust_score: int
 
 
 class ClassificationResult(TypedDict, total=False):
@@ -105,3 +143,4 @@ class PipelineSharedState(TypedDict, total=False):
     pipeline_status: str  # PENDING, PROCESSING, COMPLETED, INTERRUPTED, FAILED
     error: str | None
     metadata: dict[str, Any]
+

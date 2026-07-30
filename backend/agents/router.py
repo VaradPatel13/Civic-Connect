@@ -48,13 +48,12 @@ class RouterAgent:
     def __init__(self, ai_engine: BaseAIEngine | UnifiedAIEngine | Any | None = None) -> None:
         self.ai_engine: BaseAIEngine | Any | None = ai_engine
 
-    def process(self, state: PipelineSharedState) -> dict[str, Any]:
+    async def process(self, state: PipelineSharedState) -> dict[str, Any]:
         """Executes Department Router node logic for LangGraph workflow."""
+        from backend.agents.state import get_agent_output
         start_time = time.time()
-        agent_outputs = state.get("agent_outputs") or {}
-        agent_dict = agent_outputs if isinstance(agent_outputs, dict) else {}
-        classification = agent_dict.get("classification") if isinstance(agent_dict, dict) else {}
-        classification_dict = classification if isinstance(classification, dict) else {}
+        classification_dict = get_agent_output(state, "classification")
+        geo_dict = get_agent_output(state, "geo_validation")
 
         category = str(classification_dict.get("category", "ADMIN")).upper()
         urgency = str(classification_dict.get("urgency", "medium")).lower()
@@ -66,8 +65,6 @@ class RouterAgent:
 
         # Calculate priority score (1 to 100)
         priority_base = {"critical": 90, "high": 70, "medium": 40, "low": 20}.get(urgency, 40)
-        geo_val = agent_dict.get("geo_validation") if isinstance(agent_dict, dict) else {}
-        geo_dict = geo_val if isinstance(geo_val, dict) else {}
         if geo_dict.get("boundary_matched"):
             priority_base += 5
 
@@ -82,3 +79,4 @@ class RouterAgent:
         execution_ms = (time.time() - start_time) * 1000.0
         logger.info(f"[Router] Routed to '{dept_name}' (SLA={sla_hours}h, Priority={result['priority_score']}) in {execution_ms:.2f}ms.")
         return {"agent_outputs": {"routing": result}}
+

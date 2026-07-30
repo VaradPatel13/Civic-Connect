@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from backend.models.reports import Report
     from backend.models.rewards import RewardTransaction
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,6 +34,10 @@ class Citizen(Base, UUIDMixin, TimestampMixin):
     """
 
     __tablename__ = "citizens"
+    __table_args__ = (
+        CheckConstraint("points >= 0", name="chk_citizen_points_non_negative"),
+    )
+
 
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)

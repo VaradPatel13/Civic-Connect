@@ -264,6 +264,119 @@ export default function ReportDetailsScreen() {
             </View>
           )}
 
+          {/* ── Multi-Agent AI Pipeline Audit Trail ───────────────────── */}
+          {((report.agent_executions && report.agent_executions.length > 0) ||
+            (report.agentExecutions && report.agentExecutions.length > 0)) && (
+            <View style={{
+              backgroundColor: tokens.surface.card,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              borderWidth: 1,
+              borderColor: tokens.surface.border,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    backgroundColor: `${tokens.primary.DEFAULT}15`,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Ionicons name="hardware-chip-outline" size={16} color={tokens.primary.DEFAULT} />
+                  </View>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: tokens.text.primary }}>
+                    AI Multi-Agent Audit Trail
+                  </Text>
+                </View>
+                <View style={{
+                  backgroundColor: `${tokens.success.DEFAULT}18`,
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 6,
+                }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: tokens.success.DEFAULT, textTransform: 'uppercase' }}>
+                    Automated Audit
+                  </Text>
+                </View>
+              </View>
+
+              {(report.agent_executions || report.agentExecutions || []).map((exec: any, idx: number) => {
+                const name = exec.agent_name || exec.agentName || 'Agent';
+                const status = (exec.status || 'completed').toLowerCase();
+                const isSuccess = status === 'completed';
+                const confidence = exec.confidence != null ? `${(exec.confidence * 100).toFixed(0)}%` : null;
+                const ms = exec.execution_ms ? `${exec.execution_ms}ms` : null;
+                const model = exec.model_used || exec.modelUsed;
+
+                const iconName: any =
+                  name.toLowerCase().includes('forensic') ? 'scan-outline'
+                  : name.toLowerCase().includes('classif') ? 'pricetag-outline'
+                  : name.toLowerCase().includes('moderat') ? 'shield-checkmark-outline'
+                  : name.toLowerCase().includes('enhanc') ? 'sparkles-outline'
+                  : name.toLowerCase().includes('rout') ? 'navigate-outline'
+                  : 'notifications-outline';
+
+                return (
+                  <View
+                    key={exec.id || idx}
+                    style={{
+                      backgroundColor: tokens.surface.bg,
+                      borderRadius: 12,
+                      padding: 12,
+                      marginBottom: idx === (report.agent_executions || report.agentExecutions).length - 1 ? 0 : 10,
+                      borderWidth: 1,
+                      borderColor: tokens.surface.border,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <Ionicons name={iconName} size={18} color={tokens.primary.DEFAULT} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: tokens.text.primary }}>
+                          {name.replace(/_/g, ' ').toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        {confidence && (
+                          <View style={{ backgroundColor: `${tokens.primary.DEFAULT}12`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: tokens.primary.DEFAULT }}>
+                              {confidence}
+                            </Text>
+                          </View>
+                        )}
+                        <Ionicons
+                          name={isSuccess ? 'checkmark-circle' : 'alert-circle'}
+                          size={16}
+                          color={isSuccess ? tokens.success.DEFAULT : tokens.accent.DEFAULT}
+                        />
+                      </View>
+                    </View>
+
+                    {(model || ms) && (
+                      <Text style={{ fontSize: 11, color: tokens.text.disabled, marginTop: 4 }}>
+                        {[model, ms].filter(Boolean).join(' • ')}
+                      </Text>
+                    )}
+
+                    {exec.output_snapshot && typeof exec.output_snapshot === 'object' && (
+                      <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: tokens.surface.border }}>
+                        <Text style={{ fontSize: 11, color: tokens.text.secondary, lineHeight: 16 }}>
+                          {exec.output_snapshot.reasoning ||
+                           exec.output_snapshot.summary ||
+                           exec.output_snapshot.details ||
+                           (exec.output_snapshot.category ? `Categorized as: ${exec.output_snapshot.category}` : null) ||
+                           JSON.stringify(exec.output_snapshot).slice(0, 120)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
           {/* Status Timeline */}
           <View style={{ backgroundColor: tokens.surface.card, borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: tokens.surface.border }}>
             <Text style={{ fontSize: 12, fontWeight: '700', color: tokens.text.disabled, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>

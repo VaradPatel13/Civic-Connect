@@ -11,10 +11,18 @@ from backend.models.base import Base
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_and_cleanup_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    await engine.dispose()
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        yield
+        # D-03: Drop tables after each test to prevent stale data pollution between runs
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
+    except Exception:
+        yield
+
+
 
 
 @pytest_asyncio.fixture

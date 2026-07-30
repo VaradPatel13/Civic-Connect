@@ -69,6 +69,7 @@ class ReportService:
         category_filter: IssueCategory | None = None,
         skip: int = 0,
         limit: int = 20,
+        include_details: bool = False,
     ) -> Sequence[Report]:
         return await self.report_repo.list_reports(
             citizen_id=citizen_id,
@@ -76,7 +77,9 @@ class ReportService:
             category=category_filter,
             skip=skip,
             limit=limit,
+            include_details=include_details,
         )
+
 
     async def update_report_status(
         self,

@@ -28,7 +28,14 @@ class RewardRepository:
         report_id: UUID | None = None,
         awarded_by: str = "system",
     ) -> RewardTransaction:
-        current_balance = await self.get_user_balance(citizen_id)
+        from backend.models.citizens import Citizen
+
+        # Acquire FOR UPDATE lock on Citizen row to prevent balance race conditions (B-03)
+        stmt_user = select(Citizen).where(Citizen.id == citizen_id).with_for_update()
+        res_user = await self.session.execute(stmt_user)
+        citizen = res_user.scalar_one_or_none()
+
+        current_balance = citizen.points if citizen else await self.get_user_balance(citizen_id)
         new_balance = current_balance + points
 
         tx = RewardTransaction(
@@ -43,9 +50,16 @@ class RewardRepository:
             is_automated=True,
         )
         self.session.add(tx)
+
+        # Synchronize denormalized Citizen.points column (B-04)
+        if citizen:
+            citizen.points = new_balance
+            self.session.add(citizen)
+
         await self.session.commit()
         await self.session.refresh(tx)
         return tx
+
 
     async def list_transactions(
         self, citizen_id: UUID, skip: int = 0, limit: int = 50
