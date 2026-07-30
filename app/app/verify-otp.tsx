@@ -1,242 +1,190 @@
 /**
  * OTP Verification Screen — CivicConnect Mobile
- * Verifies 6-digit verification code sent via SMS/WhatsApp.
+ * Refactored using modular shared auth components and 6-digit OTPInput box design.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
-import { tokens } from '@src/constants';
 import { useAuthStore } from '@src/store/useAuthStore';
+import { api } from '@src/lib/api';
+import {
+  AuthHeader,
+  AuthScreen,
+  FormError,
+  OTPInput,
+  PrimaryButton,
+} from '@src/components/auth';
 
 export default function VerifyOTPScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ phone?: string; purpose?: string }>();
   const { verifyOTP, isLoading } = useAuthStore();
 
   const phone = (params.phone ?? '9876543210').replace(/\D/g, '');
   const purpose = params.purpose ?? 'register';
-  const [code, setCode] = useState('');
 
-  async function handleVerify() {
-    if (!code || code.trim().length < 4) {
-      Alert.alert('Invalid Code', 'Please enter the verification code sent to your phone.');
+  const [code, setCode] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [resendCountdown, setResendCountdown] = useState(30);
+  const [isResending, setIsResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCountdown]);
+
+  async function handleVerify(otpToVerify?: string) {
+    const finalCode = otpToVerify || code;
+    if (!finalCode || finalCode.trim().length < 6) {
+      setFormError('Please enter the complete 6-digit verification code.');
       return;
     }
 
+    setFormError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      await verifyOTP({ phone, code: code.trim(), purpose });
+      await verifyOTP({ phone, code: finalCode.trim(), purpose });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Verification Successful', 'Your account has been verified!', [
-        { text: 'Continue', onPress: () => router.replace('/(tabs)') },
-      ]);
+      router.replace('/(tabs)');
     } catch (err) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      const msg = err instanceof Error ? err.message : 'Verification failed';
-      Alert.alert('Verification Error', msg);
+      const msg = err instanceof Error ? err.message : 'Verification failed. Invalid code.';
+      setFormError(msg);
+    }
+  }
+
+  async function handleResendCode() {
+    if (resendCountdown > 0 || isResending) return;
+
+    setIsResending(true);
+    setFormError(null);
+    setResendSuccess(null);
+
+    try {
+      await api.post<unknown>(`/auth/request-otp?phone=${encodeURIComponent(phone)}&purpose=${encodeURIComponent(purpose)}`, {});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setResendSuccess('A new 6-digit verification code has been dispatched.');
+      setResendCountdown(30);
+    } catch (err) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const msg = err instanceof Error ? err.message : 'Failed to resend code. Please try again.';
+      setFormError(msg);
+    } finally {
+      setIsResending(false);
     }
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: tokens.surface.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 44) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={tokens.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Verify OTP</Text>
-        <View style={{ width: 36 }} />
-      </View>
+    <AuthScreen showBackHeader headerTitle="Verify OTP">
+      <AuthHeader
+        title="Enter Verification Code"
+        subtitle={`We have sent a 6-digit code to +91 ${phone}`}
+        iconName="shield-checkmark-outline"
+      />
 
-      <View style={styles.container}>
-        <View style={styles.card}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="key-outline" size={32} color={tokens.primary.DEFAULT} />
-          </View>
+      <FormError message={formError} />
 
-          <Text style={styles.title}>Enter Verification Code</Text>
-          <Text style={styles.subTitle}>
-            We have sent a verification code to{' '}
-            <Text style={{ fontWeight: '800', color: tokens.text.primary }}>{phone}</Text>
-          </Text>
-
-          {/* ── OTP Input ─────────────────────────────────────────────── */}
-          <View style={styles.otpInputBox}>
-            <TextInput
-              placeholder="123456"
-              placeholderTextColor={tokens.text.disabled}
-              keyboardType="number-pad"
-              maxLength={6}
-              value={code}
-              onChangeText={setCode}
-              style={styles.otpText}
-              autoFocus
-            />
-          </View>
-
-          {/* ── Submit Button ─────────────────────────────────────────── */}
-          <TouchableOpacity
-            style={[styles.submitBtn, isLoading && styles.submitBtnDisabled]}
-            onPress={handleVerify}
-            disabled={isLoading}
-            activeOpacity={0.85}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.submitBtnText}>Verify Code</Text>
-                <Ionicons name="checkmark-circle" size={18} color="#fff" />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.resendBtn}
-            onPress={() => Alert.alert('OTP Sent', 'A new verification code has been dispatched.')}
-          >
-            <Text style={styles.resendText}>Resend Code</Text>
-          </TouchableOpacity>
+      {resendSuccess ? (
+        <View style={styles.successBanner}>
+          <Text style={styles.successText}>{resendSuccess}</Text>
         </View>
+      ) : null}
+
+      <View style={styles.formGroup}>
+        {/* 6-Digit Box Input */}
+        <OTPInput
+          length={6}
+          value={code}
+          onChange={(newCode) => {
+            setCode(newCode);
+            if (formError) setFormError(null);
+          }}
+          onComplete={(completedCode) => handleVerify(completedCode)}
+        />
+
+        {/* Submit Verification Action */}
+        <PrimaryButton
+          title="Verify code"
+          onPress={() => handleVerify()}
+          isLoading={isLoading}
+          disabled={code.length < 6}
+          accessibilityLabel="Verify code button"
+        />
       </View>
-    </KeyboardAvoidingView>
+
+      {/* Resend OTP Section */}
+      <View style={styles.resendContainer}>
+        <Text style={styles.resendLabel}>Didn't receive the code?</Text>
+        <TouchableOpacity
+          onPress={handleResendCode}
+          disabled={resendCountdown > 0 || isResending}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              styles.resendLink,
+              (resendCountdown > 0 || isResending) && styles.resendLinkDisabled,
+            ]}
+          >
+            {isResending
+              ? 'Resending...'
+              : resendCountdown > 0
+              ? `Resend code in ${resendCountdown}s`
+              : 'Resend code'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: 14,
-    backgroundColor: tokens.surface.card,
-    borderBottomWidth: 1,
-    borderBottomColor: tokens.surface.border,
+  formGroup: {
+    gap: 16,
   },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: `${tokens.primary.DEFAULT}0a`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: tokens.text.primary,
-  },
-
-  container: {
-    flex: 1,
-    paddingHorizontal: 22,
-    paddingTop: 36,
-    alignItems: 'center',
-  },
-  card: {
-    width: '100%',
-    backgroundColor: tokens.surface.card,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
+  successBanner: {
+    backgroundColor: '#ECFDF5',
     borderWidth: 1,
-    borderColor: tokens.surface.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: `${tokens.primary.DEFAULT}14`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: tokens.text.primary,
-    marginBottom: 8,
-  },
-  subTitle: {
-    fontSize: 13,
-    color: tokens.text.secondary,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 24,
-  },
-
-  otpInputBox: {
-    width: '100%',
-    height: 56,
-    backgroundColor: tokens.surface.bg,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: tokens.primary.DEFAULT,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     marginBottom: 20,
   },
-  otpText: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: tokens.text.primary,
-    letterSpacing: 8,
-    textAlign: 'center',
-    width: '100%',
-  },
-
-  submitBtn: {
-    width: '100%',
-    backgroundColor: tokens.primary.DEFAULT,
-    borderRadius: 16,
-    height: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: tokens.primary.DEFAULT,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-
-  resendBtn: {
-    marginTop: 18,
-    padding: 8,
-  },
-  resendText: {
+  successText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: tokens.primary.DEFAULT,
+    color: '#065F46',
+    fontWeight: '500',
+  },
+  resendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 32,
+    gap: 6,
+  },
+  resendLabel: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  resendLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  resendLinkDisabled: {
+    color: '#94A3B8',
   },
 });

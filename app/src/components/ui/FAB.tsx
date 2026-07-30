@@ -1,38 +1,51 @@
-import { TouchableOpacity, Text } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { tokens } from '@src/constants';
 
 export interface FABProps {
   onPress: () => void;
+  bottomOffset?: number;
 }
 
-export function FAB({ onPress }: FABProps) {
+export function FAB({ onPress, bottomOffset }: FABProps) {
+  const insets = useSafeAreaInsets();
+  const bottomPosition = bottomOffset ?? Math.max(insets.bottom + 64, 80);
+
   return (
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={onPress}
-      style={{
-        position: 'absolute',
-        right: 20,
-        bottom: 28,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        backgroundColor: tokens.primary.DEFAULT,
-        paddingVertical: 14,
-        paddingHorizontal: 22,
-        borderRadius: 30,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 6,
-      }}
+      style={[styles.fab, { bottom: bottomPosition }]}
+      accessibilityRole="button"
+      accessibilityLabel="Report a civic issue"
     >
-      <Ionicons name="camera-outline" size={20} color="#fff" />
-      <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.3 }}>
-        Report Issue
-      </Text>
+      <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
+      <Text style={styles.text}>Report Issue</Text>
     </TouchableOpacity>
   );
 }
+
+const styles = StyleSheet.create({
+  fab: {
+    position: 'absolute',
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  text: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+});
