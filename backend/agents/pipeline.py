@@ -209,8 +209,11 @@ def make_visual_verification_node(agent: ForensicsAgent) -> Any:
     async def visual_verification_node(state: PipelineSharedState) -> dict[str, Any]:
         try:
             result = await agent.process(state)
-            forensics_out = (result.get("agent_outputs") or {}).get("forensics") or {}
-            if not forensics_out:
+            agent_outs = result.get("agent_outputs") or {}
+            visual_verification_out = agent_outs.get("visual_verification")
+            forensics_out = agent_outs.get("forensics") or {}
+
+            if not visual_verification_out and not forensics_out:
                 raise ValueError("ForensicsAgent returned empty output")
         except Exception as err:
             logger.error(f"[VisualNode] Agent failed: {err}. Returning missing-output marker.")
@@ -221,43 +224,44 @@ def make_visual_verification_node(agent: ForensicsAgent) -> Any:
                 }
             }
 
-        # Build Phase-1 evidence signal contract from legacy forensics output.
-        # NOTE: Phase-1C will replace this adapter with real dual-layer analysis.
-        source_type = forensics_out.get("source_type", "unknown")
-        risk_flags: list[str] = []
+        if not visual_verification_out:
+            # Fallback adapter if legacy agent didn't return visual_verification key
+            source_type = forensics_out.get("source_type", "unknown")
+            risk_flags: list[str] = []
 
-        if forensics_out.get("ai_generated"):
-            risk_flags.append("synthetic_image_suspected")
-        if forensics_out.get("manipulated"):
-            risk_flags.append("manipulation_suspected")
-        if forensics_out.get("duplicate_detected"):
-            risk_flags.append("exact_duplicate_found")
-        if source_type == "screenshot":
-            risk_flags.append("screenshot_suspected")
-        if source_type == "photo_of_screen":
-            risk_flags.append("photo_of_screen_suspected")
+            if forensics_out.get("ai_generated"):
+                risk_flags.append("synthetic_image_suspected")
+            if forensics_out.get("manipulated"):
+                risk_flags.append("manipulation_suspected")
+            if forensics_out.get("duplicate_detected"):
+                risk_flags.append("exact_duplicate_found")
+            if source_type == "screenshot":
+                risk_flags.append("screenshot_suspected")
+            if source_type == "photo_of_screen":
+                risk_flags.append("photo_of_screen_suspected")
 
-        visual_verification_out = {
-            "supports_report": forensics_out.get("supports_report"),  # None if missing
-            "evidence_confidence": (
-                float(forensics_out["confidence"])
-                if "confidence" in forensics_out
-                else None           # None = unknown, not 0.9 default
-            ),
-            "signals": {
-                "screenshot_suspected": source_type == "screenshot",
-                "photo_of_screen_suspected": source_type == "photo_of_screen",
-                "synthetic_image_suspected": bool(forensics_out.get("ai_generated", False)),
-                "manipulation_suspected": bool(forensics_out.get("manipulated", False)),
-                # EXIF signals: None = UNKNOWN (Phase-1C will populate these properly)
-                "exif_present": None,
-                "exif_gps_present": None,
-                "gps_consistent": None,
-                "exact_duplicate_found": bool(forensics_out.get("duplicate_detected", False)),
-                "perceptual_duplicate_found": False,  # Phase-1C: pHash implementation
-            },
-            "risk_flags": risk_flags,
-        }
+            visual_verification_out = {
+                "supports_report": forensics_out.get("supports_report"),  # None if missing
+                "evidence_confidence": (
+                    float(forensics_out["confidence"])
+                    if "confidence" in forensics_out
+                    else None           # None = unknown
+                ),
+                "analysis_status": "SUCCESS",
+                "signals": {
+                    "screenshot_suspected": source_type == "screenshot",
+                    "photo_of_screen_suspected": source_type == "photo_of_screen",
+                    "synthetic_image_suspected": bool(forensics_out.get("ai_generated", False)),
+                    "manipulation_suspected": bool(forensics_out.get("manipulated", False)),
+                    "exif_present": None,
+                    "exif_gps_present": None,
+                    "gps_consistent": None,
+                    "exact_duplicate_found": bool(forensics_out.get("duplicate_detected", False)),
+                    "perceptual_duplicate_found": False,
+                },
+                "risk_flags": risk_flags,
+                "details": {},
+            }
 
         return {
             "agent_outputs": {

@@ -31,9 +31,14 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             if v.startswith("[") and v.endswith("]"):
                 import json
-                return json.loads(v)
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed]
+                return [str(parsed)]
             return [i.strip() for i in v.split(",") if i.strip()]
-        return v
+        if isinstance(v, list):
+            return [str(item) for item in v]
+        return []
 
 
     @field_validator("database_url", mode="before")
@@ -76,6 +81,10 @@ class Settings(BaseSettings):
     nim_model_moderator: str = ""
     nim_model_enhancer: str = ""
     nim_model_router: str = ""
+
+    # ── Visual Evidence Verification Thresholds ───────────────────────
+    visual_gps_consistency_threshold_meters: float = 5000.0  # 5.0 km heuristic threshold
+    visual_dhash_threshold: int = 10  # Hamming distance <= 10 bits for perceptual dHash match
 
     cloudinary_url: str = ""
 

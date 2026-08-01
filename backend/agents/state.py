@@ -81,10 +81,12 @@ class VisualVerificationResult(TypedDict, total=False):
     Visual Verification produces evidence SIGNALS. It does NOT claim absolute
     authenticity. The Trust / Quality Gate makes the final trust decision.
     """
-    supports_report: bool
-    evidence_confidence: float
+    supports_report: bool | None
+    evidence_confidence: float | None
+    analysis_status: str  # "SUCCESS", "PARTIAL", "UNAVAILABLE"
     signals: dict[str, Any]   # screenshot_suspected, photo_of_screen_suspected, etc.
     risk_flags: list[str]
+    details: dict[str, Any]
 
 
 class SafetyResult(TypedDict, total=False):
