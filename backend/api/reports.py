@@ -1,17 +1,18 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Response, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.api.deps import get_current_user, get_report_service
+from backend.api.deps import get_current_user, get_idempotency_service, get_report_service
 from backend.core.database import get_db
 from backend.models.citizens import Citizen
 from backend.models.reports import IssueCategory, Report, ReportStatus
 from backend.schemas.reports import ReportCreate, ReportResponse
 from backend.services.ai_pipeline_service import run_ai_pipeline_background
+from backend.services.idempotency_service import IdempotencyService
 from backend.services.report_service import ReportService
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -21,24 +22,47 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 async def create_report(
     data: ReportCreate,
     background_tasks: BackgroundTasks,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     current_user: Citizen = Depends(get_current_user),
     service: ReportService = Depends(get_report_service),
+    idempotency_service: IdempotencyService = Depends(get_idempotency_service),
 ):
+    if idempotency_key:
+        is_dup, cached_snapshot, cached_status = await idempotency_service.get_cached_response(
+            idempotency_key=idempotency_key, request_data=data
+        )
+        if is_dup and cached_snapshot is not None:
+            response.status_code = cached_status
+            return cached_snapshot
+
     report = await service.create_report(citizen_id=current_user.id, data=data)
     background_tasks.add_task(run_ai_pipeline_background, report.id)
-    return await service.get_report(report.id)
+    result = await service.get_report(report.id)
+
+    if idempotency_key:
+        await idempotency_service.save_response(
+            idempotency_key=idempotency_key,
+            request_data=data,
+            response_data=result,
+            status_code=status.HTTP_201_CREATED,
+            report_id=report.id,
+        )
+
+    return result
 
 
 @router.get("/", response_model=list[ReportResponse])
 async def list_reports(
     status_filter: ReportStatus | None = Query(None, alias="status"),
     category_filter: IssueCategory | None = Query(None, alias="category"),
+    mine_only: bool = Query(False, alias="mine_only"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     current_user: Citizen = Depends(get_current_user),
     service: ReportService = Depends(get_report_service),
 ):
-    citizen_id = current_user.id if current_user.role.value == "citizen" else None
+    citizen_id = current_user.id if (mine_only and current_user.role.value == "citizen") else None
 
     return await service.list_reports(
         citizen_id=citizen_id,

@@ -113,7 +113,8 @@ def calculate_trust_score(
     supports_report: bool,
 ) -> int:
     """Calculates evidence trust score (0-100) based on origin, integrity, and spatial metadata."""
-    if ai_generated or manipulated or not authentic or source_type == "stock_photo":
+    SCREEN_SOURCES = {"stock_photo", "screenshot", "photo_of_screen", "internet_image", "wallpaper", "collage"}
+    if ai_generated or manipulated or not authentic or source_type in SCREEN_SOURCES:
         return 0
 
     if capture_source == "camera":
@@ -149,7 +150,22 @@ class ForensicsAgent:
         """Executes Image Forensics node logic for LangGraph workflow using multimodal visual inspection."""
         start_time = time.time()
         raw_payload = state.get("raw_payload") or {}
-        media_urls: list[str] = raw_payload.get("media_urls") or []
+
+        # Safely extract image URLs from media_urls or photos
+        media_urls: list[str] = []
+        if raw_payload.get("media_urls"):
+            media_urls = [u for u in raw_payload["media_urls"] if isinstance(u, str)]
+        elif raw_payload.get("photos"):
+            for item in raw_payload["photos"]:
+                if isinstance(item, str):
+                    media_urls.append(item)
+                elif isinstance(item, dict):
+                    url = item.get("cloudinary_url") or item.get("url") or item.get("secure_url")
+                    if url:
+                        media_urls.append(str(url))
+
+        logger.info(f"[Forensics] Raw payload: {raw_payload}")
+        logger.info(f"[Forensics] Extracted media_urls: {media_urls}")
 
         if not media_urls:
             logger.info("[Forensics] Report contains no image attachments. Defaulting to empty media validation.")
@@ -223,22 +239,32 @@ class ForensicsAgent:
                 image_urls=media_urls,
             )
 
-            # Stock photo enforcement rule
-            supports_rep = parsed.supports_report
-            if parsed.source_type == "stock_photo":
-                supports_rep = False
+            logger.info(f"[Forensics] Raw LLM vision output parsed by Pydantic: {parsed.model_dump()}")
+
+            SCREEN_SOURCES = {"stock_photo", "screenshot", "photo_of_screen", "internet_image", "wallpaper", "collage"}
+            is_screen = str(parsed.source_type) in SCREEN_SOURCES
+
+            is_authentic = parsed.authentic and not (parsed.ai_generated or parsed.manipulated or is_screen)
+            supports_rep = parsed.supports_report and parsed.reported_issue_visible and not is_screen
+            is_manipulated = parsed.manipulated or is_screen
+
+            if is_screen:
+                logger.warning(
+                    f"[Forensics] Screen/non-camera source detected ('{parsed.source_type}'). "
+                    f"Overriding LLM raw output: setting authentic=False, supports_report=False, trust_score=0."
+                )
 
             result: ForensicsResult = {
-                "authentic": parsed.authentic and not (parsed.ai_generated or parsed.manipulated),
+                "authentic": is_authentic,
                 "supports_report": supports_rep,
-                "reported_issue_visible": parsed.reported_issue_visible,
+                "reported_issue_visible": parsed.reported_issue_visible and not is_screen,
                 "issue_category_match": parsed.issue_category_match,
                 "source_type": str(parsed.source_type),
                 "quality_ok": parsed.quality_ok,
                 "ai_generated": parsed.ai_generated,
-                "manipulated": parsed.manipulated,
+                "manipulated": is_manipulated,
                 "confidence": parsed.confidence,
-                "reason": parsed.reason,
+                "reason": parsed.reason if not is_screen else f"{parsed.reason} | Screen capture / photo of screen detected ({parsed.source_type}).",
                 "duplicate_detected": parsed.duplicate_detected,
                 "matching_report_id": parsed.matching_report_id if parsed.duplicate_detected else None,
                 "capture_source": None,

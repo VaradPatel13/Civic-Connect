@@ -207,14 +207,25 @@ Return 201 Created with report ID
 Celery worker picks up task
         │
         ▼
-LangGraph supervisor executes
+Phase-1 LangGraph Verification Engine executes
+  (Supervisor ➔ Parallel Verification ➔ In-Graph Quality Gate)
         │
         ▼
-AI pipeline updates report in DB
+Quality Gate outputs decision (VERIFIED / REJECTED / PENDING_MANUAL_REVIEW)
         │
         ▼
-Citizen receives push notification
+Phase 1 Ends (VERIFIED REPORT created)
+        │
+     (Future)
+        │
+        ▼
+Future Phase 2: Incident Intelligence (Spatial Candidate Search, Similarity & Corroboration)
+        │
+        ▼
+Future Phase 3: Municipal Action (Smart Routing, SLA, Notifications)
 ```
+
+
 
 ---
 

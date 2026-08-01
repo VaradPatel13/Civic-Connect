@@ -152,7 +152,11 @@ class MockAIEngine(BaseAIEngine):
 
 @pytest.mark.asyncio
 async def test_full_pipeline_graph_execution():
-    """Verify full end-to-end execution of compiled LangGraph workflow."""
+    """Verify Phase-1 Report Verification Engine end-to-end execution.
+
+    Phase-1A: graph executes Supervisor, Safety, Visual, Geo, Issue Intelligence,
+    and Quality Gate. Downstream Enhancer/Router/Notifier are NOT part of Phase-1.
+    """
     mock_engine = MockAIEngine()
     graph = create_civic_pipeline_graph(ai_engine=mock_engine)
 
@@ -170,16 +174,23 @@ async def test_full_pipeline_graph_execution():
 
     assert final_state["report_id"] == "report-12345"
     assert final_state["pipeline_status"] == "COMPLETED"
+    assert final_state["verification_decision"] in ("VERIFIED", "REJECTED", "PENDING_MANUAL_REVIEW")
 
     outputs = final_state["agent_outputs"]
+    # Phase-1 canonical keys must be present
     assert "geo_validation" in outputs
-    assert "classification" in outputs
-    assert "enhancement" in outputs
-    assert "routing" in outputs
-    assert "notification" in outputs
+    assert "issue_intelligence" in outputs
+    assert "safety" in outputs
+    assert "visual_verification" in outputs
+    assert "quality_gate" in outputs
+
+    # Downstream Phase-3 nodes must NOT be present
+    assert "enhancement" not in outputs
+    assert "routing" not in outputs
+    assert "notification" not in outputs
 
     assert outputs["geo_validation"]["boundary_matched"] is True
-    assert outputs["routing"]["department_code"] in ["PMC_DEPT_ROADS", "PMC_DEPT_DRAIN", "PMC_DEPT_ADMIN"]
+    assert outputs["quality_gate"]["verification_decision"] in ("VERIFIED", "REJECTED", "PENDING_MANUAL_REVIEW")
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,29 @@
+"""Phase-1 AI Pipeline Service for CivicConnect.
+
+Responsibilities:
+  - Invoke the Phase-1 LangGraph Report Verification Engine.
+  - Persist verification results to the database.
+  - Translate verification_decision → ReportStatus DB enum.
+  - Record audit information to agent_executions.
+  - Handle infrastructure failures (pipeline_status = FAILED).
+
+IMPORTANT — Quality Gate authority:
+  The Trust / Quality Gate now executes INSIDE LangGraph and is the
+  ONLY component authorized to set verification_decision.
+  AIPipelineService does NOT perform a second Quality Gate evaluation
+  after graph.ainvoke(). It reads verification_decision from the final
+  graph state and maps it to a ReportStatus.
+
+Audit gap (workflow_run_id):
+  The agent_executions table currently stores workflow_id (str).
+  Phase-1 introduces workflow_run_id as a formal identifier. For now
+  workflow_run_id is passed as workflow_id to the existing audit repo.
+  A schema migration to rename/formalize this column is deferred to
+  the Phase-1G full audit implementation pass.
+
+Specs: docs/specs/ai-pipeline.md, docs/specs/AGENT.md
+"""
+
 import contextlib
 import logging
 import uuid
@@ -6,46 +32,113 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.agents.pipeline import create_civic_pipeline_graph
+from backend.agents.pipeline import (
+    DECISION_PENDING_MANUAL_REVIEW,
+    DECISION_REJECTED,
+    DECISION_VERIFIED,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    create_civic_pipeline_graph,
+)
+from backend.agents.state import get_agent_output
 from backend.core.config import settings
 from backend.models.agent_executions import AgentStatus
-from backend.models.reports import Assignment, AssignmentStatus, ReportStatus
+from backend.models.reports import ReportStatus
 from backend.repositories.agent_executions import AgentExecutionRepository
-from backend.repositories.departments import DepartmentRepository
 from backend.repositories.reports import ReportRepository
 
 logger = logging.getLogger(__name__)
 
-# Module-level compiled pipeline graph singleton (A-03) — compiled once at import time
+# ── verification_decision → ReportStatus mapping ─────────────────────────────
+# Phase-1 verification_decision values map to existing ReportStatus DB enum
+# values without requiring a schema migration.
+# IMPORTANT: unknown/empty decisions are NOT in this mapping and must be treated
+# as graph contract violations, NOT silently mapped to PENDING_MANUAL_REVIEW.
+DECISION_TO_REPORT_STATUS: dict[str, ReportStatus] = {
+    DECISION_VERIFIED: ReportStatus.VERIFIED,
+    DECISION_REJECTED: ReportStatus.REJECTED,
+    DECISION_PENDING_MANUAL_REVIEW: ReportStatus.PENDING_MANUAL_REVIEW,
+}
+
+# Module-level compiled pipeline graph singleton — compiled once at import time
 # and reused across all requests to avoid per-request graph compilation overhead.
 _PIPELINE_GRAPH: Any = None
 
 
 def _get_pipeline_graph() -> Any:
-    """Returns the cached compiled LangGraph pipeline, compiling on first call."""
+    """Returns the cached compiled Phase-1 LangGraph pipeline, compiling on first call."""
     global _PIPELINE_GRAPH
     if _PIPELINE_GRAPH is None:
-        logger.info("[AIPipelineService] Compiling LangGraph pipeline graph (first call).")
+        logger.info("[AIPipelineService] Compiling Phase-1 LangGraph pipeline (first call).")
         _PIPELINE_GRAPH = create_civic_pipeline_graph()
     return _PIPELINE_GRAPH
 
 
-
 class AIPipelineService:
-    """Production Multi-Agent Orchestration Service.
+    """Phase-1 AI Pipeline Orchestration Service.
 
-    Invokes the full LangGraph 9-agent workflow (Supervisor, Forensics, Classifier,
-    Geo Validator, Moderator, Enhancer, Router, Notifier) and writes immutable audit logs.
+    Invokes the Phase-1 Report Verification Engine (Supervisor, Safety & Abuse,
+    Visual Evidence Verification, Geo Verification, Issue Intelligence, Trust /
+    Quality Gate) and persists immutable audit logs.
+
+    Does NOT independently make a second verification decision after LangGraph.
+    LangGraph's Trust / Quality Gate is the sole source of truth for
+    verification_decision.
     """
 
     def __init__(self, session: AsyncSession):
         self.session = session
         self.report_repo = ReportRepository(session)
-        self.dept_repo = DepartmentRepository(session)
         self.agent_repo = AgentExecutionRepository(session)
 
+    async def _handle_pipeline_failure(
+        self,
+        report_id: UUID,
+        workflow_run_id: str,
+        reason: str,
+        error: Exception | str,
+    ) -> dict[str, Any]:
+        """Centralized failure handler for system/contract failures.
+
+        Used for:
+          1. LangGraph execution exceptions (graph crashed)
+          2. Graph contract violations (unknown/empty verification_decision)
+
+        Pipeline failures are NOT business decisions (REJECTED). They are
+        infrastructure failures. The report is reverted to PENDING for retry.
+        """
+        error_str = str(error)
+        logger.error(
+            f"[AIPipelineService] Pipeline failure | report={report_id} "
+            f"workflow_run_id={workflow_run_id} reason={reason}: {error_str}"
+        )
+        with contextlib.suppress(Exception):
+            err_exec = await self.agent_repo.start_execution(
+                report_id=report_id,
+                workflow_id=workflow_run_id,
+                agent_name="phase1_orchestrator",
+                model_used=settings.ai_model or settings.ai_provider,
+                input_snapshot={"report_id": str(report_id), "reason": reason},
+            )
+            await self.agent_repo.complete_execution(
+                execution_id=err_exec.id,
+                status=AgentStatus.FAILED,
+                error_snapshot={"error": error_str, "reason": reason},
+            )
+        # Revert to PENDING so the report is not stuck in PROCESSING
+        await self.report_repo.update_status(
+            report_id,
+            ReportStatus.PENDING,
+            changed_by="ai_orchestrator",
+            reason=f"{reason} — reverted for retry",
+        )
+        return {
+            "pipeline_status": STATUS_FAILED,
+            "report_id": str(report_id),
+            "error": error_str,
+        }
+
     async def process_report(self, report_id: UUID) -> dict[str, Any]:
-        workflow_id = str(uuid.uuid4())
         report = await self.report_repo.get_by_id(report_id)
         if not report:
             logger.error(f"[AIPipelineService] Report {report_id} not found.")
@@ -56,23 +149,29 @@ class AIPipelineService:
             if hasattr(report.issue_category, "value")
             else str(report.issue_category)
         )
-
         logger.info(
-            f"[AIPipelineService] Starting AI pipeline for report {report_id} "
-            f"(Title: {report.title}, Category: {category_str})"
+            f"[AIPipelineService] Starting Phase-1 verification for report={report_id} "
+            f"category={category_str}"
         )
 
-        # 1. Update status to PROCESSING
+        # 1. Update report status to PROCESSING
         await self.report_repo.update_status(
             report_id, ReportStatus.PROCESSING, changed_by="ai_orchestrator"
         )
 
-        # 2. Use cached compiled LangGraph pipeline (A-03 — compiled once, reused per request)
-        pipeline_graph = _get_pipeline_graph()
+        # 2. Collect photo URLs (original report evidence — not mutated)
+        photo_urls: list[str] = []
+        if report.photos:
+            for p in report.photos:
+                url_str = getattr(p, "cloudinary_url", None) or getattr(p, "secure_url", None)
+                if url_str:
+                    photo_urls.append(str(url_str))
+        logger.info(f"[AIPipelineService] Photos: {len(photo_urls)}")
 
-        initial_state = {
+        # 3. Build initial state for LangGraph
+        initial_state: dict[str, Any] = {
             "report_id": str(report_id),
-            "trace_id": workflow_id,
+            "trace_id": str(uuid.uuid4()),   # Distributed request trace ID
             "citizen_id": str(report.citizen_id),
             "raw_payload": {
                 "title": report.title,
@@ -81,238 +180,139 @@ class AIPipelineService:
                 "longitude": report.longitude,
                 "address": report.address,
                 "category": category_str,
-                "photos": report.photos or [],
+                "media_urls": photo_urls,
             },
             "agent_outputs": {},
         }
 
+        # 4. Invoke Phase-1 LangGraph graph
+        pipeline_graph = _get_pipeline_graph()
+        trace_id = initial_state["trace_id"]
+        final_state: dict[str, Any] = {}
         try:
             final_state = await pipeline_graph.ainvoke(initial_state)
-            agent_outputs = final_state.get("agent_outputs", {})
-            pipeline_status = final_state.get("pipeline_status", "COMPLETED")
-            logger.info(f"[AIPipelineService] Workflow finished with status: {pipeline_status}")
         except Exception as exc:
-            logger.error(f"[AIPipelineService] LangGraph execution failed: {exc}", exc_info=True)
-            agent_outputs = {}
-            pipeline_status = "FAILED"
-            # SD-02: Revert report to PENDING on pipeline failure to prevent stuck-in-PROCESSING state
-            await self.report_repo.update_status(
-                report_id,
-                ReportStatus.PENDING,
-                changed_by="ai_orchestrator",
-                reason="Pipeline execution failed — reverted for retry",
+            logger.error(
+                f"[AIPipelineService] LangGraph execution failed for report={report_id}: {exc}",
+                exc_info=True,
             )
-            return {"status": "failed", "workflow_id": workflow_id, "error": str(exc)}
-
-        # 3. Moderator Agent
-        moderation = agent_outputs.get("moderator") or agent_outputs.get("moderation") or {}
-        is_clean = moderation.get("clean", True)
-        flags = moderation.get("flags", [])
-        mod_exec = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="moderator_agent",
-            model_used="gemini-1.5-flash",
-            input_snapshot={"title": report.title, "description": report.description},
-        )
-        await self.agent_repo.complete_execution(
-            execution_id=mod_exec.id,
-            status=AgentStatus.COMPLETED if is_clean else AgentStatus.FAILED,
-            confidence=float(moderation.get("confidence", 0.95)),
-            output_snapshot=moderation if isinstance(moderation, dict) else {"clean": is_clean},
-        )
-        logger.info(f"[Moderator Agent] Clean: {is_clean}, Confidence: {moderation.get('confidence', 0.95)}")
-
-        if not is_clean:
-            await self.report_repo.update_status(
-                report_id,
-                ReportStatus.REJECTED,
-                changed_by="moderator_agent",
-                reason="Content flagged by AI moderation",
-            )
-            logger.warning(f"[Moderator Agent] Report {report_id} REJECTED due to content safety flags: {flags}")
-            return {"status": "rejected", "workflow_id": workflow_id}
-
-        # 4. Audit Forensics Node
-        forensics = agent_outputs.get("forensics") or {}
-        photos_cnt = len(report.photos) if report.photos else 0
-        if photos_cnt > 0:
-            f_exec = await self.agent_repo.start_execution(
+            # System failure → pipeline_status = FAILED (NOT verification_decision = REJECTED)
+            return await self._handle_pipeline_failure(
                 report_id=report_id,
-                workflow_id=workflow_id,
-                agent_name="image_forensics_agent",
-                model_used="claude-3-5-sonnet",
-                input_snapshot={"photos_count": photos_cnt},
+                workflow_run_id=trace_id,
+                reason="Phase-1 LangGraph execution failed",
+                error=exc,
             )
-            await self.agent_repo.complete_execution(
-                execution_id=f_exec.id,
-                status=AgentStatus.COMPLETED,
-                confidence=float(forensics.get("confidence", 0.95)),
-                output_snapshot=forensics if isinstance(forensics, dict) else {"authentic": True},
-            )
-            logger.info(f"[Forensics Agent] Photos analyzed: {photos_cnt}")
 
-        # 5. Geo Validation Agent
-        geo_val = agent_outputs.get("geo_validation") or {}
-        ward_name = geo_val.get("ward_name", "PMC Ward")
-        zone_name = geo_val.get("zone_name", "Zone 1")
-        matched = geo_val.get("boundary_matched", True)
-        g_exec = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="geo_validator_agent",
-            model_used="postgis_st_covers",
-            input_snapshot={"lat": report.latitude, "lon": report.longitude},
-        )
-        await self.agent_repo.complete_execution(
-            execution_id=g_exec.id,
-            status=AgentStatus.COMPLETED,
-            confidence=float(geo_val.get("confidence", 0.92)),
-            output_snapshot=geo_val,
-        )
-        logger.info(f"[Geo Validator Agent] Ward: {ward_name}, Zone: {zone_name}, Matched: {matched}")
+        # 5. Read results from LangGraph state (Quality Gate is sole source of truth)
+        pipeline_status = final_state.get("pipeline_status", "")
+        verification_decision = final_state.get("verification_decision", "")
+        workflow_run_id = final_state.get("workflow_run_id", trace_id)
+        agent_outputs = final_state.get("agent_outputs", {})
 
-        # 6. Audit Classification Node
-        classification = agent_outputs.get("classifier") or agent_outputs.get("classification") or {}
-        c_exec = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="classification_agent",
-            model_used="gemini-1.5-pro",
-            input_snapshot={"description": report.description},
-        )
-        await self.agent_repo.complete_execution(
-            execution_id=c_exec.id,
-            status=AgentStatus.COMPLETED,
-            confidence=float(classification.get("confidence", 0.92)),
-            output_snapshot=classification if isinstance(classification, dict) else {"category": category_str},
-        )
         logger.info(
-            f"[Classification Agent] Category: {category_str.upper()}, "
-            f"Urgency: {classification.get('urgency', 'medium').upper()}, "
-            f"Confidence: {classification.get('confidence', 0.92)}"
+            f"[AIPipelineService] Phase-1 complete | report={report_id} "
+            f"pipeline_status={pipeline_status} verification_decision={verification_decision} "
+            f"workflow_run_id={workflow_run_id}"
         )
 
-        # -------------------------------------------------------------------
-        # Quality Gate Evaluation (Confidence & GIS Threshold Check)
-        # -------------------------------------------------------------------
-        class_conf = float(classification.get("confidence", 0.92))
-        geo_matched = geo_val.get("boundary_matched", True)
-        needs_human_review = (class_conf < 0.60) or (not geo_matched)
-
-        if needs_human_review:
-            await self.report_repo.update_status(
-                report_id,
-                ReportStatus.PENDING_MANUAL_REVIEW,
-                changed_by="quality_gate",
-                reason="Low confidence or unmatched GIS ward requires officer review",
+        # 6. Strict contract validation
+        # pipeline_status != COMPLETED means graph did not complete normally.
+        if pipeline_status != STATUS_COMPLETED:
+            return await self._handle_pipeline_failure(
+                report_id=report_id,
+                workflow_run_id=workflow_run_id,
+                reason=f"Graph returned non-COMPLETED pipeline_status: {pipeline_status!r}",
+                error=f"pipeline_status={pipeline_status!r}",
             )
-            logger.warning(
-                f"[Quality Gate] Report {report_id} flagged for PENDING_MANUAL_REVIEW "
-                f"(Confidence: {class_conf:.2f}, GIS Matched: {geo_matched})"
+
+        # verification_decision must be one of the three valid Phase-1 decisions.
+        # Empty or unknown decisions are graph contract violations, NOT business decisions.
+        # PENDING_MANUAL_REVIEW means the Quality Gate EXPLICITLY chose it — not a fallback.
+        if verification_decision not in DECISION_TO_REPORT_STATUS:
+            return await self._handle_pipeline_failure(
+                report_id=report_id,
+                workflow_run_id=workflow_run_id,
+                reason=f"Graph contract violation: unexpected verification_decision={verification_decision!r}",
+                error=f"verification_decision={verification_decision!r} not in VALID_DECISIONS",
             )
-            return {"status": "pending_manual_review", "workflow_id": workflow_id}
 
-        # 7. Enhancement Agent
-        enhancement = agent_outputs.get("enhancement") or {}
+        # 7. Map verification_decision → ReportStatus and persist
+        target_status = DECISION_TO_REPORT_STATUS[verification_decision]
+        # 8. Persist quality gate decision
+        quality_gate_out = agent_outputs.get("quality_gate") or {}
+        decision_reasons = quality_gate_out.get("decision_reasons", [])
+        trust_score = quality_gate_out.get("trust_score")
 
-        # Update Report model with AI pipeline results (AI-02)
-        report.classification_confidence = float(classification.get("confidence", 0.92))
-        report.moderation_result = moderation if isinstance(moderation, dict) else {"clean": is_clean}
-        report.forensics_result = forensics if isinstance(forensics, dict) else {}
-        report.summary = enhancement.get("summary") or enhancement.get("enhanced_text") or enhancement.get("enhanced_description")
-        report.translated_description = enhancement.get("translated_text") or enhancement.get("translated_description")
-        report.ai_tags = classification.get("keywords") or classification.get("tags") or []
-        report.ward = ward_name
-        report.zone = zone_name
-        if forensics.get("duplicate_detected"):
+        await self.report_repo.update_status(
+            report_id,
+            target_status,
+            changed_by="quality_gate",
+            reason=" | ".join(decision_reasons) if decision_reasons else verification_decision,
+        )
+
+        # 7. Persist AI fields on the report model (written once after processing)
+        safety_out = get_agent_output(final_state, "safety")
+        visual_out = get_agent_output(final_state, "visual_verification")
+        geo_out = get_agent_output(final_state, "geo_validation")
+        issue_out = get_agent_output(final_state, "issue_intelligence")
+        # Legacy fields for DB columns that exist today
+        forensics_out = agent_outputs.get("forensics") or {}
+
+        report.classification_confidence = float(issue_out.get("confidence", 0.0))
+        report.moderation_result = dict(safety_out) if safety_out else None
+        report.forensics_result = dict(forensics_out) if forensics_out else None
+        report.ward = geo_out.get("ward_name")
+        report.zone = geo_out.get("zone_name")
+        report.ai_tags = issue_out.get("tags") or []
+
+        if forensics_out.get("duplicate_detected"):
             report.is_duplicate = True
-            if forensics.get("matching_report_id"):
+            if forensics_out.get("matching_report_id"):
                 with contextlib.suppress(ValueError):
-                    report.duplicate_of_id = UUID(str(forensics["matching_report_id"]))
+                    report.duplicate_of_id = UUID(str(forensics_out["matching_report_id"]))
+
         self.session.add(report)
         await self.session.commit()
 
-        enh_exec = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="enhancement_agent",
-            model_used=settings.ai_model or settings.ai_provider,
-            input_snapshot={"text": report.description},
-        )
-        await self.agent_repo.complete_execution(
-            execution_id=enh_exec.id,
-            status=AgentStatus.COMPLETED,
-            confidence=0.95,
-            output_snapshot=enhancement,
-        )
-
-
-        # 8. Smart Department Routing & Assignment
-        r_exec = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="routing_agent",
-            model_used=settings.ai_model or settings.ai_provider,
-            input_snapshot={"category": category_str, "address": report.address},
-        )
-
-        dept = await self.dept_repo.find_department_for_category(category_str)
-        if not dept:
-            depts = await self.dept_repo.list_departments()
-            dept = depts[0] if depts else None
-
-
-        if dept:
-            assignment = Assignment(
+        # 8. Record Phase-1 audit execution (workflow_run_id passed as workflow_id for now)
+        # NOTE: audit schema gap — workflow_run_id stored in workflow_id column.
+        # Phase-1G will formalize this with a dedicated workflow_run_id column.
+        with contextlib.suppress(Exception):
+            audit_exec = await self.agent_repo.start_execution(
                 report_id=report_id,
-                department_id=dept.id,
-                status=AssignmentStatus.ACTIVE,
-                routing_confidence=0.91,
-                routing_reason=f"Matched issue category '{category_str}' to department '{dept.name}'",
-                assigned_by="routing_agent",
+                workflow_id=workflow_run_id,
+                agent_name="phase1_quality_gate",
+                model_used="deterministic_policy_engine",
+                input_snapshot={
+                    "class_confidence": issue_out.get("confidence"),
+                    "geo_matched": geo_out.get("boundary_matched"),
+                    "safety_clean": safety_out.get("clean"),
+                    "visual_supports": visual_out.get("supports_report"),
+                },
             )
-            self.session.add(assignment)
-            await self.session.commit()
-
-            await self.report_repo.update_status(
-                report_id,
-                ReportStatus.ASSIGNED,
-                changed_by="routing_agent",
-                reason=f"Assigned to {dept.name}",
+            await self.agent_repo.complete_execution(
+                execution_id=audit_exec.id,
+                status=AgentStatus.COMPLETED,
+                confidence=float(trust_score) if trust_score is not None else None,
+                output_snapshot={
+                    "verification_decision": verification_decision,
+                    "decision_reasons": decision_reasons,
+                    "trust_score": trust_score,
+                },
             )
 
-        await self.agent_repo.complete_execution(
-            execution_id=r_exec.id,
-            status=AgentStatus.COMPLETED,
-            confidence=0.91,
-            output_snapshot={"assigned_department_id": str(dept.id) if dept else None},
+        logger.info(
+            f"[AIPipelineService] Phase-1 audit recorded | report={report_id} "
+            f"decision={verification_decision} workflow_run_id={workflow_run_id}"
         )
-        logger.info(f"[Routing Agent] Assigned report {report_id} to department: {dept.name if dept else 'Unassigned'}")
-
-        # 9. Notification & Rewards Agent
-        notifier_out = agent_outputs.get("notification") or {}
-        n_exec = await self.agent_repo.start_execution(
-            report_id=report_id,
-            workflow_id=workflow_id,
-            agent_name="notifier_agent",
-            model_used="push_notifier",
-            input_snapshot={"report_id": str(report_id)},
-        )
-        await self.agent_repo.complete_execution(
-            execution_id=n_exec.id,
-            status=AgentStatus.COMPLETED,
-            confidence=1.0,
-            output_snapshot=notifier_out,
-        )
-
-        logger.info(f"[AIPipelineService] Completed background workflow {workflow_id} for report {report_id}.")
 
         return {
-            "workflow_id": workflow_id,
-            "status": "completed",
+            "pipeline_status": pipeline_status,
+            "verification_decision": verification_decision,
             "report_id": str(report_id),
-            "assigned_department": dept.name if dept else None,
+            "workflow_run_id": workflow_run_id,
+            "trust_score": trust_score,
         }
 
 
@@ -326,6 +326,6 @@ async def run_ai_pipeline_background(report_id: UUID) -> None:
             await service.process_report(report_id)
         except Exception as exc:
             logger.error(
-                f"[run_ai_pipeline_background] Worker failed for report {report_id}: {exc}",
+                f"[run_ai_pipeline_background] Worker failed for report={report_id}: {exc}",
                 exc_info=True,
             )

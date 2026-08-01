@@ -37,23 +37,21 @@ The platform follows a layered architecture with event-driven processing for lon
         └───────────────┬────────────────┘
                         │
                         ▼
-               LangGraph Supervisor
+               Phase-1 LangGraph Verification Engine
                         │
-      ┌──────────────────────────────────┐
-      │ Validation Supervisor            │
-      │                                  │
-      │  ├── Forensics                   │
-      │  ├── Classifier                  │
-      │  ├── Geo Validator               │
-      │  ├── Moderator                   │
-      │  ├── Enhancer                    │
-      │  ├── Department Router           │
-      │  ├── Notifier                    │
-      │  └── Auditor                     │
-      └──────────────────────────────────┘
+      ┌─────────────────────────────────────────────────┐
+      │ Supervisor / Orchestrator                       │
+      │                                                 │
+      │   ├── 1. Safety & Abuse Verification            │
+      │   ├── 2. Visual Evidence Verification           │
+      │   ├── 3. Geo Verification                       │
+      │   └── 4. Issue Intelligence                     │
+      │                                                 │
+      │   ──► 5. Trust / Quality Gate Policy Engine     │
+      └─────────────────────────────────────────────────┘
                         │
                         ▼
-               External Services
+      Output Decision (VERIFIED / REJECTED / REVIEW)
 
         Cloudinary
         NVIDIA NIM
@@ -176,42 +174,49 @@ Business logic must never exist inside API route handlers.
 
 # AI Architecture
 
-The AI system uses LangGraph with a Supervisor pattern.
+The CivicConnect AI processing system uses LangGraph for multi-agent workflow orchestration.
 
-Supervisor
+### Architectural Evolution Notice
+- **Current Legacy Implementation** (`backend/agents/pipeline.py`): Runs an 8-node workflow with downstream Enhancer, Router, and Notifier nodes inside the graph, followed by an imperative Quality Gate policy check outside the graph.
+- **Target Phase-1 Refactor Architecture**: Refactors the graph into a dedicated **Phase-1 Report Verification Engine** comprising 6 logical components with an **in-graph Trust / Quality Gate** decision node. Downstream operations (Incident Intelligence, Routing, Notifications) are separated into subsequent phases.
 
-↓
+---
 
-Validation
+### Target Phase-1 Graph Architecture Diagram
 
-↓
+```mermaid
+flowchart TD
 
-Parallel execution
+    START([START]) --> SUPERVISOR[1. Supervisor / Orchestrator]
 
-- Forensics
-- Classification
-- Geo Validation
-- Moderation
+    SUPERVISOR --> SAFETY[2. Safety & Abuse Verification]
+    SUPERVISOR --> VISUAL[3. Visual Evidence Verification]
+    SUPERVISOR --> GEO[4. Geo Verification]
+    SUPERVISOR --> ISSUE_INTELLIGENCE[5. Issue Intelligence]
 
-↓
+    SAFETY --> JOIN[JOIN / Parallel Synchronization]
+    VISUAL --> JOIN
+    GEO --> JOIN
+    ISSUE_INTELLIGENCE --> JOIN
 
-Enhancement
+    JOIN --> QUALITY_GATE[6. Trust / Quality Gate Policy Engine]
 
-↓
+    QUALITY_GATE -->|VERIFIED| VERIFIED_END([END: Verified Report])
+    QUALITY_GATE -->|REJECTED| REJECTED_END([END: Rejected Report])
+    QUALITY_GATE -->|PENDING_MANUAL_REVIEW| REVIEW_END([END: Pending Manual Review])
+```
 
-Department Routing
+---
 
-↓
+### Phase-1 Component Summary
 
-Notification
+1. **Supervisor / Orchestrator**: State preparation, text normalization, PII sanitization, and parallel execution startup.
+2. **Safety & Abuse Verification**: Defense against profanity, toxicity, spam, and prompt/instruction injections (Citizen text is treated strictly as **UNTRUSTED DATA**).
+3. **Visual Evidence Verification**: Dual-layer analysis (Visual Understanding + Technical/Forensic Signals) covering camera photos, screenshots, photo-of-screen, AI-generated images, manipulated media, and perceptual hash duplicates (Citizen images are treated strictly as **UNTRUSTED EVIDENCE**).
+4. **Geo Verification**: Deterministic PostGIS `ST_Covers` spatial boundary checks against PMC ward geometries.
+5. **Issue Intelligence**: Multilingual classification of PMC category, urgency, tags, and public safety risk.
+6. **Trust / Quality Gate**: Deterministic policy engine running **inside** the graph to produce a final `VERIFIED`, `REJECTED`, or `PENDING_MANUAL_REVIEW` outcome.
 
-↓
-
-Audit
-
-Only the Supervisor controls execution order.
-
-Agents never communicate directly.
 
 ---
 
@@ -312,50 +317,45 @@ Transactional emails.
 # Data Flow
 
 Citizen submits report
-
-↓
-
+        │
+        ▼
 FastAPI validates request
+        │
+        ▼
+Report persisted in DB (status: PENDING)
+        │
+        ▼
+Background verification task enqueued
+        │
+        ▼
+Phase-1 Report Verification Engine
+        │
+        ▼
+Supervisor prepares state & AI-safe representation
+        │
+        ▼
+Parallel Verification
+  (Safety & Abuse, Visual Evidence, Geo, Issue Intelligence)
+        │
+        ▼
+Trust / Quality Gate Policy Engine
+        │
+        ▼
+Verification Decision Emitted
+  (VERIFIED / REJECTED / PENDING_MANUAL_REVIEW)
+        │
+        ▼
+Phase 1 Ends (Verified Report created)
+        │
+     (Future)
+        │
+        ▼
+Future Phase 2: Incident Intelligence (Spatial Candidate Search, Similarity & Corroboration)
+        │
+        ▼
+Future Phase 3: Municipal Action (Smart Routing, SLA, Notifications)
+```
 
-↓
-
-Database stores report
-
-↓
-
-Celery creates background task
-
-↓
-
-Supervisor starts pipeline
-
-↓
-
-Validation
-
-↓
-
-Parallel AI agents
-
-↓
-
-Enhancement
-
-↓
-
-Department routing
-
-↓
-
-Notifications
-
-↓
-
-Audit logging
-
-↓
-
-Citizen receives updates
 
 ---
 

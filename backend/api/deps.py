@@ -4,13 +4,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.core.config import settings
 from backend.core.database import get_db
 from backend.models.citizens import Citizen
 from backend.repositories.user import UserRepository
 from backend.services.ai_pipeline_service import AIPipelineService
 from backend.services.auth_service import AuthService
 from backend.services.department_service import DepartmentService
+from backend.services.idempotency_service import IdempotencyService
 from backend.services.notification_service import NotificationService
 from backend.services.report_service import ReportService
 from backend.services.reward_service import RewardService
@@ -46,25 +46,16 @@ def get_ai_pipeline_service(db: AsyncSession = Depends(get_db)) -> AIPipelineSer
     return AIPipelineService(db)
 
 
+def get_idempotency_service(db: AsyncSession = Depends(get_db)) -> IdempotencyService:
+    return IdempotencyService(db)
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     user_repo: UserRepository = Depends(get_user_repository),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> Citizen:
     if not credentials:
-        if settings.debug:
-            demo_user = await user_repo.get_by_email("demo@civicconnect.gov.in")
-            if not demo_user:
-                demo_user = await user_repo.get_by_phone("+919999999999")
-            if not demo_user:
-                demo_user = await user_repo.create(
-                    phone="+919999999999",
-                    email="demo@civicconnect.gov.in",
-                    display_name="Demo Citizen",
-                    password_hash="demo_hash_placeholder",
-                    is_active=True,
-                )
-            return demo_user
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials were not provided",
@@ -102,8 +93,9 @@ async def get_current_user(
     citizen = await user_repo.get_by_id(citizen_id)
     if not citizen:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User account not found",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account no longer exists or session is invalid",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not citizen.is_active:

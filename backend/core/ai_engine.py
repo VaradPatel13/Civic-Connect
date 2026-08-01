@@ -204,8 +204,10 @@ class UnifiedAIEngine(BaseAIEngine):
             for img_url in valid_image_urls:
                 user_content.append({"type": "image_url", "image_url": {"url": img_url}})
             messages.append({"role": "user", "content": user_content})
+            logger.info(f"[AIEngine] [{self.provider}] Vision payload created with {len(valid_image_urls)} image(s) for model '{self.model_name}'. Message sample: {messages[-1]}")
         else:
             messages.append({"role": "user", "content": user_prompt_text})
+            logger.info(f"[AIEngine] [{self.provider}] Text-only payload created for model '{self.model_name}'.")
 
         extra_headers: dict[str, str] = {}
         if self.provider == "openrouter":
