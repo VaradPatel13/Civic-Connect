@@ -31,3 +31,6 @@ export type { StatusBadgeProps }   from './StatusBadge';
 
 export { LeafletMap }         from './LeafletMap';
 export type { LeafletMapProps }   from './LeafletMap';
+
+export { ExecutiveReportCard, getStatusDetails } from './ExecutiveReportCard';
+export type { ExecutiveReportCardProps } from './ExecutiveReportCard';

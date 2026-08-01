@@ -73,7 +73,7 @@ export default function VerifyOTPScreen() {
     setResendSuccess(null);
 
     try {
-      await api.post<unknown>(`/auth/request-otp?phone=${encodeURIComponent(phone)}&purpose=${encodeURIComponent(purpose)}`, {});
+      await api.post<unknown>(`/api/v1/auth/request-otp?phone=${encodeURIComponent(phone)}&purpose=${encodeURIComponent(purpose)}`, {});
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setResendSuccess('A new 6-digit verification code has been dispatched.');
       setResendCountdown(30);

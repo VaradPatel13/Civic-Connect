@@ -1,0 +1,42 @@
+[
+  {
+    "id": "pothole",
+    "label": "Potholes & Roads",
+    "icon": "car-outline"
+  },
+  {
+    "id": "streetlight",
+    "label": "Street Lights",
+    "icon": "bulb-outline"
+  },
+  {
+    "id": "water",
+    "label": "Water Supply",
+    "icon": "water-outline"
+  },
+  {
+    "id": "drainage",
+    "label": "Drainage",
+    "icon": "rainy-outline"
+  },
+  {
+    "id": "sanitation",
+    "label": "Waste Disposal",
+    "icon": "trash-bin-outline"
+  },
+  {
+    "id": "traffic",
+    "label": "Traffic Signals",
+    "icon": "trail-sign-outline"
+  },
+  {
+    "id": "noise",
+    "label": "Noise Pollution",
+    "icon": "volume-high-outline"
+  },
+  {
+    "id": "other",
+    "label": "Other Issues",
+    "icon": "grid-outline"
+  }
+]

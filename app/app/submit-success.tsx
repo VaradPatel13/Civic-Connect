@@ -1,27 +1,24 @@
 /**
- * Submit Success Screen — CivicConnect
- *
- * PhonePe / payment-receipt style confirmation shown after a
- * successful report submission. Replaces react-native-reanimated
- * with React Native's built-in Animated API.
+ * Submit Success Screen — CivicConnect Mobile
+ * Clean, receipt-style confirmation shown after a successful report submission.
  */
 import { useEffect, useRef } from 'react';
 import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
-import { tokens } from '@src/constants';
 import { ISSUE_CATEGORY_MAP } from '@src/types/reports';
 
 export default function SubmitSuccessScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<Record<string, string>>();
 
-  // ── Entrance animations (React Native built-in Animated) ──────────────────
-  const checkScale   = useRef(new Animated.Value(0)).current;
-  const cardOpacity  = useRef(new Animated.Value(0)).current;
-  const cardTranslateY = useRef(new Animated.Value(30)).current;
+  const checkScale = useRef(new Animated.Value(0)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+  const cardTranslateY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -29,236 +26,320 @@ export default function SubmitSuccessScreen() {
     Animated.sequence([
       Animated.spring(checkScale, {
         toValue: 1,
-        friction: 5,
-        tension:  120,
+        friction: 6,
+        tension: 120,
         useNativeDriver: true,
       }),
     ]).start();
 
     Animated.sequence([
-      Animated.delay(400),
+      Animated.delay(300),
       Animated.parallel([
-        Animated.spring(cardOpacity,    { toValue: 1, friction: 8, tension: 60, useNativeDriver: true }),
+        Animated.spring(cardOpacity, { toValue: 1, friction: 8, tension: 60, useNativeDriver: true }),
         Animated.spring(cardTranslateY, { toValue: 0, friction: 10, tension: 80, useNativeDriver: true }),
       ]),
     ]).start();
-  }, []);
+  }, [cardOpacity, cardTranslateY, checkScale]);
 
-  const cat     = ISSUE_CATEGORY_MAP[params.category as keyof typeof ISSUE_CATEGORY_MAP];
-  const icon    = cat?.icon  ?? 'location';
-  const label   = cat?.label ?? params.category ?? 'Report';
+  const cat = ISSUE_CATEGORY_MAP[params.category as keyof typeof ISSUE_CATEGORY_MAP];
+  const icon = (cat?.icon ?? 'location-outline') as keyof typeof Ionicons.glyphMap;
+  const label = cat?.label ?? params.category ?? 'Report';
   const photoUri = params.photoUri;
-  const address  = params.address ?? 'Pune';
-  const title    = params.title   ?? 'Your Report';
+  const address = params.address ?? 'Pune';
+  const title = params.title ?? 'Your Report';
 
-  // Transaction-style ID from backend UUID
   const txId = params.id
     ? `#${params.id.split('-')[0].toUpperCase()}`
     : `#${Date.now().toString(36).toUpperCase()}`;
 
-  const checkAnimatedStyle = {
-    transform: [{ scale: checkScale }],
-  };
-
-  const cardAnimatedStyle = {
-    opacity:   cardOpacity,
-    transform: [{ translateY: cardTranslateY }],
-  };
-
   return (
-    <View style={_s.container}>
-
-      {/* ── Hero header ───────────────────────────────────────────────── */}
-      <View style={_s.hero}>
-        <Animated.View style={[ _s.checkCircle, checkAnimatedStyle ]}>
-          <Ionicons name="checkmark" size={48} color="#fff" />
+    <View style={styles.screen}>
+      {/* Hero Header */}
+      <View style={[styles.hero, { paddingTop: Math.max(insets.top + 16, 50) }]}>
+        <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }] }]}>
+          <Ionicons name="checkmark" size={38} color="#FFFFFF" />
         </Animated.View>
-        <Text style={_s.heroTitle}>Report Submitted!</Text>
-        <Text style={_s.heroSubtitle}>Your civic voice has been heard.</Text>
+        <Text style={styles.heroTitle}>Report Submitted!</Text>
+        <Text style={styles.heroSubtitle}>Your civic issue has been logged successfully.</Text>
       </View>
 
-      {/* ── Receipt card ─────────────────────────────────────────────── */}
-      <Animated.View style={[ _s.card, cardAnimatedStyle ]}>
-
+      {/* Receipt Card */}
+      <Animated.View
+        style={[
+          styles.card,
+          {
+            opacity: cardOpacity,
+            transform: [{ translateY: cardTranslateY }],
+          },
+        ]}
+      >
         {/* Confirmation ID */}
-        <View style={_s.txRow}>
-          <Text style={_s.txLabel}>Confirmation No.</Text>
-          <Text style={_s.txId}>{txId}</Text>
+        <View style={styles.txRow}>
+          <Text style={styles.txLabel}>Confirmation No.</Text>
+          <Text style={styles.txId}>{txId}</Text>
         </View>
 
-        <View style={_s.divider} />
+        <View style={styles.divider} />
 
         {/* Category */}
-        <View style={_s.row}>
-          <View style={_s.rowLeft}>
-            <View style={[ _s.iconBox, { backgroundColor: `${tokens.primary.DEFAULT}18` }]}>
-              <Ionicons name={icon as any} size={15} color={tokens.primary.DEFAULT} />
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <View style={styles.iconBox}>
+              <Ionicons name={icon} size={14} color="#059669" />
             </View>
-            <Text style={_s.rowLabelText}>Category</Text>
+            <Text style={styles.rowLabelText}>Category</Text>
           </View>
-          <Text style={_s.rowRight}>{label}</Text>
+          <Text style={styles.rowRight}>{label}</Text>
         </View>
 
         {/* Location */}
-        <View style={_s.row}>
-          <View style={_s.rowLeft}>
-            <Ionicons name="location-outline" size={15} color={tokens.text.disabled} />
-            <Text style={_s.rowLabelText}>Location</Text>
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <Ionicons name="location-outline" size={15} color="#64748B" />
+            <Text style={styles.rowLabelText}>Location</Text>
           </View>
-          <Text style={[ _s.rowRight, _s.rowRightMultiline ]} numberOfLines={2}>
+          <Text style={styles.rowRight} numberOfLines={2}>
             {address}
           </Text>
         </View>
 
-        {/* Issue title */}
-        <View style={_s.row}>
-          <View style={_s.rowLeft}>
-            <Ionicons name="document-text-outline" size={15} color={tokens.text.disabled} />
-            <Text style={_s.rowLabelText}>Issue</Text>
+        {/* Issue Title */}
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <Ionicons name="document-text-outline" size={15} color="#64748B" />
+            <Text style={styles.rowLabelText}>Issue</Text>
           </View>
-          <Text style={[ _s.rowRight, _s.rowRightMultiline ]} numberOfLines={2}>
+          <Text style={styles.rowRight} numberOfLines={2}>
             {title}
           </Text>
         </View>
 
-        <View style={_s.divider} />
+        <View style={styles.divider} />
 
-        {/* 4-step timeline */}
-        <View style={_s.timeline}>
+        {/* Timeline */}
+        <View style={styles.timeline}>
           {[
-            { icon: 'checkmark-circle',     label: 'Submitted',    active: true  },
-            { icon: 'time-outline',         label: 'Under Review',  active: false },
-            { icon: 'construct-outline',   label: 'In Progress',  active: false },
-            { icon: 'checkmark-circle-outline', label: 'Resolved',  active: false },
-          ].map((step, i) => (
-            <View key={step.label} style={_s.timelineStep}>
-              <View style={[
-                _s.timelineDot,
-                step.active && { backgroundColor: tokens.primary.DEFAULT },
-              ]}>
+            { icon: 'checkmark-circle', label: 'Submitted', active: true },
+            { icon: 'time-outline', label: 'Review', active: false },
+            { icon: 'construct-outline', label: 'In Progress', active: false },
+            { icon: 'checkmark-circle-outline', label: 'Resolved', active: false },
+          ].map((step) => (
+            <View key={step.label} style={styles.timelineStep}>
+              <View style={[styles.timelineDot, step.active && styles.timelineDotActive]}>
                 <Ionicons
                   name={step.icon as any}
-                  size={13}
-                  color={step.active ? '#fff' : tokens.text.disabled}
+                  size={12}
+                  color={step.active ? '#FFFFFF' : '#94A3B8'}
                 />
               </View>
-              {i < 3 && (
-                <View style={[
-                  _s.timelineLine,
-                  step.active && { backgroundColor: tokens.primary.DEFAULT },
-                ]} />
-              )}
-              <Text style={[
-                _s.timelineLabel,
-                step.active && { color: tokens.primary.DEFAULT, fontWeight: '800' },
-              ]}>
+              <Text style={[styles.timelineLabel, step.active && styles.timelineLabelActive]}>
                 {step.label}
               </Text>
             </View>
           ))}
         </View>
 
-        <View style={_s.divider} />
+        <View style={styles.divider} />
 
         {/* Primary CTA */}
         <TouchableOpacity
-          style={_s.primaryBtn}
-          activeOpacity={0.75}
+          style={styles.primaryBtn}
+          activeOpacity={0.8}
           onPress={() => router.push('/(tabs)/reports')}
         >
-          <Text style={_s.primaryBtnText}>View My Reports</Text>
+          <Text style={styles.primaryBtnText}>View My Reports</Text>
         </TouchableOpacity>
 
         {/* Secondary CTA */}
         <TouchableOpacity
-          style={_s.secondaryBtn}
-          activeOpacity={0.75}
+          style={styles.secondaryBtn}
+          activeOpacity={0.8}
           onPress={() => router.push('/(tabs)')}
         >
-          <Text style={_s.secondaryBtnText}>Back to Home</Text>
+          <Text style={styles.secondaryBtnText}>Back to Home</Text>
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Photo badge */}
+      {/* Photo Badge */}
       {photoUri ? (
-        <View style={_s.photoBadge}>
-          <Image source={{ uri: photoUri }} style={_s.photoThumb} />
-          <Text style={_s.photoBadgeText}>Photo attached</Text>
+        <View style={styles.photoBadge}>
+          <Image source={{ uri: photoUri }} style={styles.photoThumb} />
+          <Text style={styles.photoBadgeText}>Photo attached</Text>
         </View>
       ) : null}
     </View>
   );
 }
 
-// ── Styles (inline to avoid extra import) ─────────────────────────────────────
-const _s = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: tokens.surface.bg },
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
   hero: {
-    backgroundColor: tokens.primary.DEFAULT,
-    paddingTop:    80,
-    paddingBottom: 44,
-    alignItems:   'center',
+    backgroundColor: '#059669',
+    paddingBottom: 40,
+    alignItems: 'center',
   },
   checkCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    alignItems:    'center',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
     justifyContent: 'center',
-    marginBottom:  18,
+    marginBottom: 12,
   },
-  heroTitle:    { fontSize: 26, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  heroSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.85)', marginTop: 5 },
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.4,
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.85)',
+    marginTop: 4,
+  },
 
   card: {
-    marginHorizontal: 16,
-    marginTop:   -18,
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding:      20,
-    shadowColor:  '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.09,
-    shadowRadius: 14,
-    elevation:    4,
+    marginHorizontal: 20,
+    marginTop: -16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    gap: 10,
   },
 
-  txRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  txLabel:   { fontSize: 11, fontWeight: '700', color: tokens.text.disabled, textTransform: 'uppercase', letterSpacing: 0.8 },
-  txId:      { fontSize: 15, fontWeight: '800', color: tokens.primary.DEFAULT, letterSpacing: 1 },
-  divider:   { height: 1, backgroundColor: tokens.surface.border, marginVertical: 14 },
-
-  row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  rowLeft:    { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  iconBox:    { width: 24, height: 24, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  rowLabelText:{ fontSize: 12, color: tokens.text.disabled, fontWeight: '600' },
-  rowRight:   { fontSize: 13, color: tokens.text.primary, fontWeight: '600', maxWidth: '58%', textAlign: 'right' },
-  rowRightMultiline: { fontSize: 12, fontWeight: '500', lineHeight: 16 },
-
-  timeline:   { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 2 },
-  timelineStep:{ flex: 1, alignItems: 'center' },
-  timelineDot:{
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: tokens.surface.border,
-    alignItems: 'center', justifyContent: 'center',
+  txRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  timelineLine:{
-    height: 2, width: '100%', backgroundColor: tokens.surface.border, marginVertical: 3,
+  txLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  timelineLabel:{ fontSize: 9, color: tokens.text.disabled, marginTop: 4, fontWeight: '600', textAlign: 'center' },
+  txId: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#059669',
+    letterSpacing: 0.5,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 4,
+  },
 
-  primaryBtn:   {
-    backgroundColor: tokens.primary.DEFAULT, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginBottom: 10,
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowLabelText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  rowRight: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '600',
+    maxWidth: '55%',
+    textAlign: 'right',
+  },
+
+  timeline: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  timelineStep: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  timelineDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timelineDotActive: {
+    backgroundColor: '#059669',
+  },
+  timelineLabel: {
+    fontSize: 9,
+    color: '#64748B',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  timelineLabelActive: {
+    color: '#059669',
+    fontWeight: '700',
+  },
+
+  primaryBtn: {
+    backgroundColor: '#059669',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   secondaryBtn: {
-    backgroundColor: tokens.surface.bg, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center',
-    borderWidth: 1, borderColor: tokens.surface.border,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  secondaryBtnText:{ color: tokens.text.primary, fontWeight: '700', fontSize: 15 },
+  secondaryBtnText: {
+    color: '#0F172A',
+    fontWeight: '600',
+    fontSize: 14,
+  },
 
-  photoBadge:   { flexDirection: 'row', alignItems: 'center', gap: 7, marginHorizontal: 20, marginTop: 16 },
-  photoThumb:   { width: 32, height: 32, borderRadius: 6 },
-  photoBadgeText:{ fontSize: 12, color: tokens.text.disabled },
+  photoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 14,
+  },
+  photoThumb: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+  },
+  photoBadgeText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
 });

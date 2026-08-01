@@ -2,7 +2,7 @@
  * Signup / Citizen Registration Screen — CivicConnect Mobile
  * Refactored using modular shared auth components.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -31,7 +31,13 @@ const LANGUAGES = [
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { register, isLoading } = useAuthStore();
+  const { register, isLoading, isAuthenticated } = useAuthStore();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, router]);
 
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');

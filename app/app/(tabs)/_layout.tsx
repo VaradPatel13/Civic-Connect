@@ -1,6 +1,7 @@
-import { Platform, useColorScheme } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Platform, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { TOKENS } from '@src/theme/tokens';
 
 const TAB_ICONS: Record<string, { focused: keyof typeof Ionicons.glyphMap; unfocused: keyof typeof Ionicons.glyphMap }> = {
@@ -11,23 +12,27 @@ const TAB_ICONS: Record<string, { focused: keyof typeof Ionicons.glyphMap; unfoc
 };
 
 export default function TabLayout() {
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const p = isDark ? TOKENS.colors.dark : TOKENS.colors.light;
+
+  const activeColor = p.accentPrimary;
+  const inactiveColor = isDark ? '#64748B' : '#64748B';
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: p.accentPrimary,
-        tabBarInactiveTintColor: p.textMuted,
+        tabBarActiveTintColor: activeColor,
+        tabBarInactiveTintColor: inactiveColor,
         tabBarStyle: {
           height: Platform.OS === 'ios' ? 84 : 64,
           paddingBottom: Platform.OS === 'ios' ? 24 : 10,
           paddingTop: 8,
           backgroundColor: p.surface,
           borderTopWidth: 1,
-          borderTopColor: p.border,
+          borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
           elevation: 10,
         },
         tabBarLabelStyle: {
@@ -55,6 +60,29 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="create"
+        options={{
+          title: 'Report',
+          tabBarButton: () => (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push('/camera');
+              }}
+              style={styles.centerFabContainer}
+              accessibilityRole="button"
+              accessibilityLabel="Report a civic issue"
+            >
+              <View style={[styles.centerFabCircle, { borderColor: isDark ? '#1E293B' : '#FFFFFF' }]}>
+                <Ionicons name="camera" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.centerFabLabel}>Report</Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{
           title: 'Alerts',
@@ -74,4 +102,33 @@ export default function TabLayout() {
       />
     </Tabs>
   );
-}
+}
+
+const styles = StyleSheet.create({
+  centerFabContainer: {
+    top: -14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 68,
+  },
+  centerFabCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 3,
+  },
+  centerFabLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+    marginTop: 2,
+  },
+});

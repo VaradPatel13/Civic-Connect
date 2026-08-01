@@ -1,182 +1,100 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+/**
+ * Reports Tab Screen — CivicConnect Mobile
+ * Single direct fetch from /api/v1/reports/dashboard — no store dependency.
+ */
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
   ActivityIndicator,
-  Image,
+  FlatList,
+  RefreshControl,
   StyleSheet,
-  useColorScheme,
-  Animated,
-  Platform,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { TOKENS } from '@src/theme/tokens';
+import * as Haptics from 'expo-haptics';
+
 import type { Report } from '@src/types';
 import { api } from '@src/lib/api';
-import { FAB } from '@src/components/ui';
-
-const CATEGORY_ICON: Record<string, string> = {
-  roads: 'alert-circle',
-  pothole: 'alert-circle',
-  street_lighting: 'flash',
-  streetlight: 'flash',
-  drainage: 'water',
-  water_supply: 'water-outline',
-  waste_management: 'trash',
-  traffic: 'trail-sign',
-  noise: 'volume-high',
-  other: 'location',
-};
+import { ExecutiveReportCard, getStatusDetails } from '@src/components/ui';
 
 const FILTER_TABS = ['All', 'Open', 'In Progress', 'Resolved'] as const;
 type FilterTab = (typeof FILTER_TABS)[number];
 
-function timeAgo(iso?: string): string {
-  if (!iso) return 'Recently';
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+function normalizeReport(r: any): Report {
+  const photosList = r.photos ?? r.images ?? [];
+  const normalizedImages = photosList.map((p: any, idx: number) => {
+    if (typeof p === 'string') {
+      return { id: `photo-${idx}`, url: p };
+    }
+    return {
+      id: p.id ? String(p.id) : `photo-${idx}`,
+      url: p.url || p.cloudinary_url || p.secure_url || '',
+      display_order: p.display_order ?? idx,
+      forensic_score: p.forensic_score ?? null,
+      is_authentic: p.is_authentic ?? null,
+    };
+  });
 
-function useItemEntrance(index: number) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(10)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 300,
-        delay: Math.min(index * 50, 300),
-        useNativeDriver: true,
-      }),
-      Animated.spring(translateY, {
-        toValue: 0,
-        friction: 8,
-        tension: 40,
-        delay: Math.min(index * 50, 300),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [index, opacity, translateY]);
-
-  return { opacity, translateY };
-}
-
-function ExecutiveReportCard({
-  report,
-  index,
-  onPress,
-  isDark,
-}: {
-  report: Report;
-  index: number;
-  onPress: () => void;
-  isDark: boolean;
-}) {
-  const p = isDark ? TOKENS.colors.dark : TOKENS.colors.light;
-  const { opacity, translateY } = useItemEntrance(index);
-  const [imgError, setImgError] = useState(false);
-
-  const catKey = (report.category || 'other').toLowerCase();
-  const iconName = CATEGORY_ICON[catKey] ?? 'location';
-
-  const isResolved = report.status === 'resolved';
-  const isInProgress = report.status === 'in_progress' || report.status === 'assigned';
-  const statusBg = isResolved ? `${p.accentLime}20` : isInProgress ? `${p.accentCyan}20` : `${p.accentRose}20`;
-  const statusColor = isResolved ? p.accentLime : isInProgress ? p.accentCyan : p.accentRose;
-  const statusLabel = isResolved ? 'RESOLVED' : isInProgress ? 'IN PROGRESS' : 'OPEN';
-
-  const firstImg = report.images?.[0];
-  const imageUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
-
-  return (
-    <Animated.View style={{ opacity, transform: [{ translateY }] }}>
-      <TouchableOpacity
-        activeOpacity={0.82}
-        style={[styles.cardContainer, { backgroundColor: p.surface, borderColor: p.border }]}
-        onPress={onPress}>
-        {/* Card Banner Image or Category Pattern */}
-        <View style={[styles.cardMediaArea, { backgroundColor: p.pillBg }]}>
-          {Boolean(imageUrl) && !imgError ? (
-            <Image
-              source={{ uri: imageUrl }}
-              style={styles.cardImage}
-              onError={() => setImgError(true)}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.cardPlaceholderIcon}>
-              <Ionicons name={iconName as any} size={32} color={p.accentPrimary} />
-            </View>
-          )}
-
-          <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
-            <Text style={[styles.statusBadgeText, { color: statusColor }]}>{statusLabel}</Text>
-          </View>
-        </View>
-
-        {/* Content Details */}
-        <View style={styles.cardContent}>
-          <Text style={[styles.reportTitle, { color: p.textPrimary }]} numberOfLines={2}>
-            {report.title}
-          </Text>
-
-          <View style={styles.metaRow}>
-            <Ionicons name="location-outline" size={13} color={p.textMuted} />
-            <Text style={[styles.locationText, { color: p.textSecondary }]} numberOfLines={1}>
-              {report.location?.address ?? 'Shivajinagar, Ward 12'}
-            </Text>
-            <Text style={[styles.dotSep, { color: p.textMuted }]}>•</Text>
-            <Text style={[styles.timeText, { color: p.textMuted }]}>{timeAgo(report.createdAt)}</Text>
-          </View>
-
-          <View style={[styles.divider, { backgroundColor: p.border }]} />
-
-          <View style={styles.cardFooter}>
-            <View style={styles.counterWrap}>
-              <View style={styles.counterItem}>
-                <Ionicons name="caret-up-circle-outline" size={16} color={p.accentPrimary} />
-                <Text style={[styles.counterText, { color: p.textPrimary }]}>{report.upvotes ?? 0}</Text>
-              </View>
-              <View style={styles.counterItem}>
-                <Ionicons name="chatbubble-ellipses-outline" size={15} color={p.textMuted} />
-                <Text style={[styles.counterText, { color: p.textSecondary }]}>{report.commentCount ?? 0}</Text>
-              </View>
-            </View>
-
-            <Ionicons name="chevron-forward" size={16} color={p.textMuted} />
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
+  return {
+    id: String(r.id),
+    title: r.title || 'Untitled Report',
+    description: r.description || '',
+    category: String(r.category || r.issue_category || 'other').toLowerCase() as any,
+    status: String(r.status || 'open').toLowerCase() as any,
+    location: {
+      lat: r.location?.lat ?? r.latitude ?? 0,
+      lng: r.location?.lng ?? r.longitude ?? 0,
+      address: r.location?.address ?? r.address ?? '',
+    },
+    images: normalizedImages,
+    authorId: String(r.authorId ?? r.citizen_id ?? ''),
+    authorName: r.authorName ?? '',
+    upvotes: r.upvotes ?? 0,
+    commentCount: r.commentCount ?? 0,
+    isUpvoted: Boolean(r.isUpvoted),
+    createdAt: r.createdAt ?? r.created_at ?? new Date().toISOString(),
+    updatedAt: r.updatedAt ?? r.updated_at ?? new Date().toISOString(),
+  };
 }
 
 export default function ReportsScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const p = isDark ? TOKENS.colors.dark : TOKENS.colors.light;
+  const insets = useSafeAreaInsets();
 
   const [filter, setFilter] = useState<FilterTab>('All');
   const [refreshing, setRefreshing] = useState(false);
   const [reports, setReports] = useState<Report[]>([]);
+  const [activeCount, setActiveCount] = useState(0);
+  const [resolvedCount, setResolvedCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchReports = useCallback(async () => {
+    setError(null);
     try {
-      const data = await api.get<Report[]>('/api/v1/reports/');
-      setReports(Array.isArray(data) ? data : []);
-    } catch {
-      setReports([]);
+      // Fetch only this user's own reports
+      const res = await api.get<any>('/api/v1/reports/?mine_only=true');
+      const rawList: any[] = Array.isArray(res) ? res : [];
+
+      const normalized = rawList.map(normalizeReport);
+      setReports(normalized);
+
+      setActiveCount(
+        normalized.filter((r) => {
+          const g = getStatusDetails(r.status).group;
+          return g === 'Open' || g === 'In Progress';
+        }).length,
+      );
+      setResolvedCount(
+        normalized.filter((r) => getStatusDetails(r.status).group === 'Resolved').length,
+      );
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to load reports');
+
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -193,52 +111,51 @@ export default function ReportsScreen() {
   }, [fetchReports]);
 
   const filteredReports = reports.filter((r) => {
+    const info = getStatusDetails(r.status);
     if (filter === 'All') return true;
-    if (filter === 'Open' && (r.status === 'open' || r.status === 'pending')) return true;
-    if (filter === 'In Progress' && (r.status === 'in_progress' || r.status === 'assigned')) return true;
-    if (filter === 'Resolved' && r.status === 'resolved') return true;
-    return false;
+    if (filter === 'Open') return info.group === 'Open';
+    if (filter === 'In Progress') return info.group === 'In Progress';
+    if (filter === 'Resolved') return info.group === 'Resolved';
+    return true;
   });
 
-  const activeCount = reports.filter((r) => r.status !== 'resolved').length;
-  const resolvedCount = reports.filter((r) => r.status === 'resolved').length;
-
   return (
-    <View style={[styles.screen, { backgroundColor: p.bg }]}>
-      {/* Asymmetric Header */}
-      <View style={styles.headerContainer}>
+    <View style={styles.screen}>
+      {/* Header */}
+      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top + 6, 40) }]}>
         <View>
-          <Text style={[styles.kickerText, { color: p.accentPrimary }]}>CITIZEN DISPATCH FEED</Text>
-          <Text style={[styles.headerTitle, { color: p.textPrimary }]}>District Reports</Text>
+          <Text style={styles.kickerText}>MY REPORTS</Text>
+          <Text style={styles.headerTitle}>Your Reports</Text>
         </View>
 
         <View style={styles.statsCapsules}>
-          <View style={[styles.statCapsule, { backgroundColor: `${p.accentRose}15`, borderColor: `${p.accentRose}30` }]}>
-            <Text style={[styles.statVal, { color: p.accentRose }]}>{activeCount}</Text>
-            <Text style={[styles.statLbl, { color: p.textSecondary }]}>Active</Text>
+          <View style={[styles.statCapsule, { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' }]}>
+            <Text style={[styles.statVal, { color: '#DC2626' }]}>{activeCount}</Text>
+            <Text style={styles.statLbl}>Active</Text>
           </View>
-          <View style={[styles.statCapsule, { backgroundColor: `${p.accentLime}15`, borderColor: `${p.accentLime}30` }]}>
-            <Text style={[styles.statVal, { color: p.accentLime }]}>{resolvedCount}</Text>
-            <Text style={[styles.statLbl, { color: p.textSecondary }]}>Fixed</Text>
+          <View style={[styles.statCapsule, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+            <Text style={[styles.statVal, { color: '#059669' }]}>{resolvedCount}</Text>
+            <Text style={styles.statLbl}>Fixed</Text>
           </View>
         </View>
       </View>
 
       {/* Segmented Filter Bar */}
       <View style={styles.filterBarContainer}>
-        <View style={[styles.filterSegment, { backgroundColor: p.pillBg, borderColor: p.border }]}>
+        <View style={styles.filterSegment}>
           {FILTER_TABS.map((tab) => {
             const active = tab === filter;
             return (
               <TouchableOpacity
                 key={tab}
                 activeOpacity={0.8}
-                style={[
-                  styles.filterTabButton,
-                  { backgroundColor: active ? p.surface : 'transparent' },
-                ]}
-                onPress={() => setFilter(tab)}>
-                <Text style={[styles.filterTabText, { color: active ? p.accentPrimary : p.textSecondary, fontWeight: active ? '800' : '600' }]}>
+                style={[styles.filterTabButton, active && styles.filterTabActive]}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setFilter(tab);
+                }}
+              >
+                <Text style={[styles.filterTabText, active && styles.filterTextActive]}>
                   {tab}
                 </Text>
               </TouchableOpacity>
@@ -250,7 +167,17 @@ export default function ReportsScreen() {
       {/* Reports List */}
       {loading ? (
         <View style={styles.loadingArea}>
-          <ActivityIndicator size="large" color={p.accentPrimary} />
+          <ActivityIndicator size="large" color="#059669" />
+          <Text style={styles.loadingText}>Loading reports...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="cloud-offline-outline" size={36} color="#DC2626" />
+          <Text style={styles.errorTitle}>Could not load reports</Text>
+          <Text style={styles.errorSub}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={fetchReports}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -259,16 +186,20 @@ export default function ReportsScreen() {
           contentContainerStyle={styles.listPadding}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={p.accentPrimary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#059669"
+            />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <View style={[styles.emptyIconCircle, { backgroundColor: p.pillBg }]}>
-                <Ionicons name="documents-outline" size={32} color={p.textMuted} />
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="documents-outline" size={28} color="#059669" />
               </View>
-              <Text style={[styles.emptyTitle, { color: p.textPrimary }]}>No {filter.toLowerCase()} reports</Text>
-              <Text style={[styles.emptySub, { color: p.textSecondary }]}>
-                File a report using the camera button to notify ward engineers.
+              <Text style={styles.emptyTitle}>{filter === 'All' ? "You haven't filed any reports yet" : `No ${filter.toLowerCase()} reports`}</Text>
+              <Text style={styles.emptySub}>
+                Tap the camera button to report a civic issue in your area.
               </Text>
             </View>
           }
@@ -277,14 +208,10 @@ export default function ReportsScreen() {
               report={item}
               index={index}
               onPress={() => router.push({ pathname: '/report-details', params: { id: item.id } })}
-              isDark={isDark}
             />
           )}
         />
       )}
-
-      {/* Floating Create FAB */}
-      <FAB onPress={() => router.push('/camera')} />
     </View>
   );
 }
@@ -292,32 +219,37 @@ export default function ReportsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
   },
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingTop: Platform.select({ ios: 56, android: 44 }) ?? 44,
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   kickerText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#059669',
+    letterSpacing: 0.5,
     marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.4,
   },
   statsCapsules: {
     flexDirection: 'row',
     gap: 8,
   },
   statCapsule: {
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -325,152 +257,121 @@ const styles = StyleSheet.create({
   },
   statVal: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   statLbl: {
     fontSize: 9,
-    fontWeight: '700',
+    fontWeight: '600',
+    color: '#64748B',
   },
-
   filterBarContainer: {
     paddingHorizontal: 20,
-    marginBottom: 16,
+    paddingVertical: 12,
   },
   filterSegment: {
     flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
     padding: 3,
   },
   filterTabButton: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 7,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  filterTabActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   filterTabText: {
     fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
   },
-
+  filterTextActive: {
+    fontWeight: '700',
+    color: '#059669',
+  },
   loadingArea: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
   },
   listPadding: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
-    gap: 14,
+    paddingBottom: 110,
+    gap: 12,
+    paddingTop: 4,
   },
-
-  /* Card Styles */
-  cardContainer: {
-    borderRadius: 18,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  cardMediaArea: {
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardImage: {
-    width: '100%',
-    height: '100%',
-  },
-  cardPlaceholderIcon: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  statusBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-
-  cardContent: {
-    padding: 16,
-    gap: 8,
-  },
-  reportTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    lineHeight: 20,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  locationText: {
-    fontSize: 12,
-    fontWeight: '500',
-    maxWidth: '65%',
-  },
-  dotSep: {
-    fontSize: 10,
-  },
-  timeText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-
-  divider: {
-    height: 1,
-    marginVertical: 4,
-  },
-
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  counterWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  counterItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  counterText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 60,
-    gap: 10,
+    gap: 8,
   },
   emptyIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   emptySub: {
     fontSize: 12,
+    color: '#64748B',
     textAlign: 'center',
     maxWidth: 240,
-    lineHeight: 18,
+    lineHeight: 17,
   },
-});
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 32,
+  },
+  errorTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  errorSub: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  retryBtn: {
+    marginTop: 8,
+    backgroundColor: '#059669',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  retryBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+});

@@ -2,7 +2,7 @@
  * Login Screen — CivicConnect Mobile
  * Refactored using modular shared auth components.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -25,7 +25,13 @@ import {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, isLoading } = useAuthStore();
+  const { login, isLoading, isAuthenticated } = useAuthStore();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, router]);
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');

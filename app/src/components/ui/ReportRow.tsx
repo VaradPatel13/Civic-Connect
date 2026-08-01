@@ -19,8 +19,11 @@ export function ReportRow({ report, onPress }: ReportRowProps) {
     : statusStr === 'in_progress' || statusStr === 'assigned' || statusStr === 'processing' ? '#0284C7'
     : '#D97706';
 
-  const firstImg = report.images?.[0];
-  const imageUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
+  const photosList = (report as any).photos ?? report.images ?? [];
+  const firstImg = photosList[0];
+  const imageUrl = typeof firstImg === 'string'
+    ? firstImg
+    : firstImg?.cloudinary_url || firstImg?.secure_url || firstImg?.url || null;
 
   return (
     <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={styles.container}>

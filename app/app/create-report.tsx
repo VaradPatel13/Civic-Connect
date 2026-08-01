@@ -1,29 +1,29 @@
 /**
- * Create Report Screen — CivicConnect
- *
- * Step 2 of 2 (after camera).
- * Arrives from camera.tsx with:
- *   - photoUri:          local URI of the captured photo
- *   - secure_url (etc):  Cloudinary response fields
- *
- * Auto-detects location, collects title + category + description,
- * then submits to POST /api/v1/reports and navigates to submit-success.
+ * Create Report Screen — CivicConnect Mobile
+ * Executive incident report creation wizard matching the app design system.
  */
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, KeyboardAvoidingView,
-  Platform, ScrollView, StyleSheet, Text, TextInput,
-  TouchableOpacity, View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
-import { tokens }       from '@src/constants';
-import { api }          from '@src/lib/api';
+import { api } from '@src/lib/api';
 import { getCurrentLocation } from '@src/lib/location';
-import { LeafletMap }   from '@src/components/ui/LeafletMap';
+import { LeafletMap } from '@src/components/ui/LeafletMap';
 import { ISSUE_CATEGORY_SLUGS, type CreateReportPayload, type IssueCategorySlug } from '@src/types/reports';
 
 export default function CreateReportScreen() {
@@ -31,31 +31,26 @@ export default function CreateReportScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<Record<string, string>>();
 
-  // ── Form state ───────────────────────────────────────────────────────────────
-  const [title,       setTitle]       = useState('');
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category,    setCategory]    = useState<IssueCategorySlug>('roads');
-  const [address,     setAddress]     = useState<string>('Detecting location…');
-  const [lat,         setLat]         = useState<number | null>(null);
-  const [lng,         setLng]         = useState<number | null>(null);
-  const [submitting,  setSubmitting]  = useState(false);
-  const [step]        = useState(2);
+  const [category, setCategory] = useState<IssueCategorySlug>('roads');
+  const [address, setAddress] = useState<string>('Detecting location…');
+  const [lat, setLat] = useState<number | null>(null);
+  const [lng, setLng] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Pre-filled from camera screen
-  const photoUri      = params.photoUri    ?? '';
+  const photoUri = params.photoUri ?? '';
   const cloudinaryUrl = params.secure_url ?? params.url ?? '';
   const photoMetadataRaw = params.photoMetadata ?? '';
 
-  // ── Auto-detect location on mount ────────────────────────────────────────────
   useEffect(() => {
-    getCurrentLocation().then(loc => {
+    getCurrentLocation().then((loc) => {
       setLat(loc.latitude);
       setLng(loc.longitude);
       setAddress(loc.address);
     });
   }, []);
 
-  // ── Submit ────────────────────────────────────────────────────────────────────
   async function handleSubmit() {
     if (submitting) return;
 
@@ -76,7 +71,7 @@ export default function CreateReportScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      let parsedMetadataList = [];
+      const parsedMetadataList = [];
       if (cloudinaryUrl && photoMetadataRaw) {
         try {
           const parsed = JSON.parse(photoMetadataRaw);
@@ -85,20 +80,20 @@ export default function CreateReportScreen() {
             ...parsed,
           });
         } catch {
-          // Ignore JSON parse error if raw metadata is invalid
+          // Ignore error
         }
       }
 
       const payload: CreateReportPayload = {
-        title:          title.trim(),
-        description:    description.trim(),
+        title: title.trim(),
+        description: description.trim(),
         issue_category: category,
-        latitude:       lat ?? 18.5204,
-        longitude:      lng ?? 73.8567,
-        address:        address,
-        photos:         cloudinaryUrl ? [cloudinaryUrl] : [],
+        latitude: lat ?? 18.5204,
+        longitude: lng ?? 73.8567,
+        address: address,
+        photos: cloudinaryUrl ? [cloudinaryUrl] : [],
         photo_metadata: parsedMetadataList,
-        language:       'en',
+        language: 'en',
       };
 
       const report = await api.post<{ id: string }>('/api/v1/reports/', payload);
@@ -106,8 +101,8 @@ export default function CreateReportScreen() {
       router.replace({
         pathname: '/submit-success',
         params: {
-          id:       report.id,
-          title:    title.trim(),
+          id: report.id,
+          title: title.trim(),
           category,
           address,
           photoUri,
@@ -127,62 +122,62 @@ export default function CreateReportScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: tokens.surface.bg }}
+      style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Safe Header */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 44) }]}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top + 6, 40) }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => router.back()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="chevron-back" size={24} color={tokens.text.primary} />
+          <Ionicons name="chevron-back" size={22} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>File Report</Text>
+        <Text style={styles.headerTitle}>File Issue Report</Text>
         <View style={styles.stepPill}>
-          <Text style={styles.stepPillText}>Step {step} of 2</Text>
+          <Text style={styles.stepPillText}>Step 2 of 2</Text>
         </View>
       </View>
 
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Photo Preview Header ────────────────────────────────────────── */}
+        {/* Photo Preview Section */}
         <View style={styles.photoContainer}>
           {photoUri ? (
             <View style={styles.photoWrapper}>
               <Image source={{ uri: photoUri }} style={styles.photoPreview} />
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={styles.floatingRetakeBtn}
+                style={styles.retakeBtn}
                 onPress={() => router.replace('/camera')}
               >
-                <Ionicons name="camera" size={14} color="#fff" />
-                <Text style={styles.floatingRetakeText}>Retake</Text>
+                <Ionicons name="camera" size={13} color="#FFFFFF" />
+                <Text style={styles.retakeBtnText}>Retake Photo</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity style={styles.photoPlaceholder} onPress={() => router.replace('/camera')}>
-              <Ionicons name="camera-outline" size={32} color={tokens.primary.DEFAULT} />
-              <Text style={styles.photoPlaceholderText}>Tap to capture live photo</Text>
+              <Ionicons name="camera-outline" size={28} color="#059669" />
+              <Text style={styles.photoPlaceholderText}>Tap to capture photo</Text>
             </TouchableOpacity>
           )}
         </View>
 
         <View style={styles.formContainer}>
-          {/* ── Category Selector ─────────────────────────────────────────── */}
-          <Text style={styles.sectionLabel}>Category *</Text>
+          {/* Category Selector */}
+          <Text style={styles.sectionKicker}>Category *</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: 20 }}
-            contentContainerStyle={{ gap: 8, paddingRight: 16 }}
+            style={{ marginBottom: 16 }}
+            contentContainerStyle={{ gap: 8 }}
           >
-            {ISSUE_CATEGORY_SLUGS.map(cat => {
+            {ISSUE_CATEGORY_SLUGS.map((cat) => {
               const active = category === cat.slug;
               return (
                 <TouchableOpacity
@@ -191,17 +186,17 @@ export default function CreateReportScreen() {
                   onPress={() => { setCategory(cat.slug); Haptics.selectionAsync(); }}
                   style={[
                     styles.categoryChip,
-                    active ? styles.categoryChipActive : styles.categoryChipInactive,
+                    active && styles.categoryChipActive,
                   ]}
                 >
                   <Ionicons
                     name={cat.icon as any}
                     size={14}
-                    color={active ? '#fff' : tokens.text.secondary}
+                    color={active ? '#059669' : '#64748B'}
                   />
                   <Text style={[
                     styles.categoryChipText,
-                    active ? styles.categoryChipTextActive : styles.categoryChipTextInactive,
+                    active && styles.categoryChipTextActive,
                   ]}>
                     {cat.label}
                   </Text>
@@ -210,35 +205,29 @@ export default function CreateReportScreen() {
             })}
           </ScrollView>
 
-          {/* ── Auto-detected Location & Leaflet Map ───────────────────────── */}
-          <Text style={styles.sectionLabel}>Location (auto-detected)</Text>
+          {/* Location Box & Leaflet Map */}
+          <Text style={styles.sectionKicker}>Location (Auto-Detected)</Text>
           <View style={styles.locationBox}>
-            <Ionicons name="location" size={16} color={tokens.primary.DEFAULT} />
+            <Ionicons name="location" size={16} color="#059669" />
             <Text style={styles.locationText} numberOfLines={2}>{address}</Text>
-            <TouchableOpacity onPress={() => router.replace('/camera')}>
-              <Ionicons name="refresh-outline" size={18} color={tokens.text.disabled} />
-            </TouchableOpacity>
           </View>
 
           {Boolean(lat && lng) && (
-            <View style={{ marginBottom: 18 }}>
+            <View style={{ marginBottom: 16 }}>
               <LeafletMap
                 latitude={lat!}
                 longitude={lng!}
                 address={address}
-                height={190}
+                height={160}
               />
-              <Text style={styles.coordText}>
-                GPS Coordinates: {lat!.toFixed(5)}° N, {lng!.toFixed(5)}° E
-              </Text>
             </View>
           )}
 
-          {/* ── Issue Title ─────────────────────────────────────────────────── */}
-          <Text style={styles.sectionLabel}>Issue Title *</Text>
+          {/* Issue Title */}
+          <Text style={styles.sectionKicker}>Issue Title *</Text>
           <TextInput
             placeholder="e.g. Broken streetlight near Wakad Bridge"
-            placeholderTextColor={tokens.text.disabled}
+            placeholderTextColor="#94A3B8"
             value={title}
             onChangeText={setTitle}
             maxLength={100}
@@ -246,11 +235,11 @@ export default function CreateReportScreen() {
           />
           <Text style={styles.charCount}>{title.length}/100</Text>
 
-          {/* ── Description ───────────────────────────────────────────────── */}
-          <Text style={styles.sectionLabel}>Detailed Description *</Text>
+          {/* Description */}
+          <Text style={styles.sectionKicker}>Detailed Description *</Text>
           <TextInput
             placeholder="Describe the issue, location details, and any immediate safety hazards…"
-            placeholderTextColor={tokens.text.disabled}
+            placeholderTextColor="#94A3B8"
             value={description}
             onChangeText={setDescription}
             multiline
@@ -259,23 +248,23 @@ export default function CreateReportScreen() {
             textAlignVertical="top"
           />
 
-          {/* ── Upload Status Badge ────────────────────────────────────────── */}
+          {/* Upload Status Badge */}
           {cloudinaryUrl ? (
-            <View style={styles.uploadChipSuccess}>
-              <Ionicons name="checkmark-circle" size={16} color={tokens.success.DEFAULT} />
-              <Text style={styles.uploadChipSuccessText}>Photo encrypted & attached</Text>
+            <View style={styles.uploadSuccess}>
+              <Ionicons name="checkmark-circle" size={15} color="#059669" />
+              <Text style={styles.uploadSuccessText}>Photo encrypted & attached</Text>
             </View>
           ) : (
-            <View style={styles.uploadChipWarning}>
-              <Ionicons name="information-circle-outline" size={16} color={tokens.accent.DEFAULT} />
-              <Text style={styles.uploadChipWarningText}>No photo attached — tap retake to add one</Text>
+            <View style={styles.uploadWarning}>
+              <Ionicons name="information-circle-outline" size={15} color="#D97706" />
+              <Text style={styles.uploadWarningText}>No photo attached — tap retake to add</Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* ── Bottom Submit Bar ───────────────────────────────────────────────── */}
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + 12, 20) }]}>
+      {/* Bottom Submit Bar */}
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + 10, 16) }]}>
         <TouchableOpacity
           style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
           onPress={handleSubmit}
@@ -283,13 +272,13 @@ export default function CreateReportScreen() {
           activeOpacity={0.85}
         >
           {submitting ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <ActivityIndicator size="small" color="#fff" />
+            <View style={styles.btnRow}>
+              <ActivityIndicator size="small" color="#FFFFFF" />
               <Text style={styles.submitBtnText}>Submitting Report…</Text>
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="paper-plane" size={18} color="#fff" />
+            <View style={styles.btnRow}>
+              <Ionicons name="paper-plane" size={16} color="#FFFFFF" />
               <Text style={styles.submitBtnText}>Submit Report</Text>
             </View>
           )}
@@ -300,233 +289,243 @@ export default function CreateReportScreen() {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: 14,
-    backgroundColor: tokens.surface.card,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: tokens.surface.border,
+    borderBottomColor: '#F1F5F9',
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: `${tokens.primary.DEFAULT}0a`,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: tokens.text.primary,
-    letterSpacing: -0.3,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   stepPill: {
-    backgroundColor: `${tokens.primary.DEFAULT}12`,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
   },
   stepPillText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: tokens.primary.DEFAULT,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
   },
 
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
   photoContainer: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingTop: 16,
   },
   photoWrapper: {
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: tokens.surface.border,
+    borderColor: '#E2E8F0',
     position: 'relative',
-    height: 190,
+    height: 170,
   },
   photoPreview: {
     width: '100%',
     height: '100%',
   },
-  floatingRetakeBtn: {
+  retakeBtn: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 10,
+    right: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    gap: 4,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  floatingRetakeText: {
-    color: '#fff',
-    fontSize: 12,
+  retakeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
     fontWeight: '700',
   },
   photoPlaceholder: {
-    height: 150,
-    borderRadius: 16,
-    backgroundColor: tokens.surface.card,
-    borderWidth: 1.5,
-    borderColor: tokens.surface.border,
+    height: 130,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   photoPlaceholderText: {
-    fontSize: 13,
-    color: tokens.text.secondary,
-    fontWeight: '600',
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
   },
 
   formContainer: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    gap: 8,
   },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: tokens.text.disabled,
-    textTransform: 'uppercase',
+  sectionKicker: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
     letterSpacing: 0.8,
-    marginBottom: 8,
+    textTransform: 'uppercase',
   },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   categoryChipActive: {
-    backgroundColor: tokens.primary.DEFAULT,
-    borderColor: tokens.primary.DEFAULT,
-  },
-  categoryChipInactive: {
-    backgroundColor: tokens.surface.card,
-    borderColor: tokens.surface.border,
+    backgroundColor: '#ECFDF5',
+    borderColor: '#059669',
   },
   categoryChipText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '500',
+    color: '#334155',
   },
   categoryChipTextActive: {
-    color: '#fff',
-  },
-  categoryChipTextInactive: {
-    color: tokens.text.primary,
+    color: '#059669',
+    fontWeight: '700',
   },
 
   locationBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: tokens.surface.card,
-    borderRadius: 12,
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: tokens.surface.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 4,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   locationText: {
     flex: 1,
     fontSize: 13,
-    fontWeight: '600',
-    color: tokens.text.primary,
-  },
-  coordText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: tokens.text.disabled,
-    marginTop: 4,
+    fontWeight: '500',
+    color: '#0F172A',
   },
 
   input: {
-    backgroundColor: tokens.surface.card,
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: tokens.surface.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
-    fontWeight: '500',
-    color: tokens.text.primary,
-    marginBottom: 4,
+    color: '#0F172A',
   },
   textArea: {
-    minHeight: 100,
-    paddingTop: 12,
+    minHeight: 90,
+    paddingTop: 10,
   },
   charCount: {
     fontSize: 10,
-    fontWeight: '600',
-    color: tokens.text.disabled,
+    fontWeight: '500',
+    color: '#94A3B8',
     textAlign: 'right',
-    marginBottom: 16,
+    marginTop: -4,
+    marginBottom: 4,
   },
 
-  uploadChipSuccess: {
+  uploadSuccess: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: tokens.success.light,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     alignSelf: 'flex-start',
-    marginTop: 4,
   },
-  uploadChipSuccessText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: tokens.success.DEFAULT,
-  },
-  uploadChipWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: tokens.accent.light,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  uploadChipWarningText: {
-    fontSize: 12,
+  uploadSuccessText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: tokens.accent.DEFAULT,
+    color: '#059669',
+  },
+  uploadWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  uploadWarningText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#D97706',
   },
 
   footer: {
-    paddingHorizontal: 18,
-    paddingTop: 12,
-    backgroundColor: tokens.surface.card,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: tokens.surface.border,
+    borderTopColor: '#F1F5F9',
   },
   submitBtn: {
-    backgroundColor: tokens.primary.DEFAULT,
-    borderRadius: 16,
-    paddingVertical: 15,
+    backgroundColor: '#059669',
+    borderRadius: 8,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: tokens.primary.DEFAULT,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.3 },
+  submitBtnDisabled: {
+    opacity: 0.6,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  submitBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });

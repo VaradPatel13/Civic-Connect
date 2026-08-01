@@ -1,21 +1,15 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import categoriesData from '@src/data/categories.json';
 
 export interface CategoryItem {
   id: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-  count: number;
 }
 
-const CATEGORIES: CategoryItem[] = [
-  { id: 'pothole', label: 'Potholes & Roads', icon: 'construct-outline', count: 12 },
-  { id: 'streetlight', label: 'Street Lights', icon: 'flash-outline', count: 8 },
-  { id: 'drainage', label: 'Water & Drainage', icon: 'water-outline', count: 6 },
-  { id: 'sanitation', label: 'Waste Disposal', icon: 'trash-bin-outline', count: 5 },
-  { id: 'traffic', label: 'Traffic Signals', icon: 'navigate-outline', count: 3 },
-];
+const CATEGORIES: CategoryItem[] = categoriesData as CategoryItem[];
 
 interface CategoryChipsProps {
   selectedCategory: string | null;
@@ -58,17 +52,12 @@ export function CategoryChips({ selectedCategory, onSelectCategory }: CategoryCh
             >
               <Ionicons
                 name={cat.icon}
-                size={15}
+                size={16}
                 color={isSelected ? '#059669' : '#64748B'}
               />
               <Text style={[styles.label, isSelected && styles.labelSelected]}>
                 {cat.label}
               </Text>
-              <View style={[styles.badge, isSelected && styles.badgeSelected]}>
-                <Text style={[styles.badgeText, isSelected && styles.badgeTextSelected]}>
-                  {cat.count}
-                </Text>
-              </View>
             </TouchableOpacity>
           );
         })}
@@ -123,22 +112,5 @@ const styles = StyleSheet.create({
   labelSelected: {
     fontWeight: '600',
     color: '#059669',
-  },
-  badge: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  badgeSelected: {
-    backgroundColor: '#A7F3D0',
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  badgeTextSelected: {
-    color: '#065F46',
   },
 });

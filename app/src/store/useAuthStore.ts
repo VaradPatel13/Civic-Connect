@@ -51,13 +51,35 @@ export const useAuthStore = create<AuthState>((set, get) => {
       try {
         const storedToken = await initializeAuthTokens();
         const refreshToken = await storage.getRefreshToken();
+        const cachedUser = await storage.getUser();
 
         if (storedToken || refreshToken) {
-          const user = await get().fetchCurrentUser();
-          if (user) {
+          // Instantly set authenticated state if we have a cached user profile & valid tokens
+          if (cachedUser && (storedToken || getAuthToken())) {
             set({
-              user,
+              user: cachedUser,
+              token: getAuthToken() || storedToken,
+              isAuthenticated: true,
+            });
+          }
+
+          // Fetch latest user profile from backend
+          const fetchedUser = await get().fetchCurrentUser();
+          if (fetchedUser) {
+            await storage.setUser(fetchedUser);
+            set({
+              user: fetchedUser,
               token: getAuthToken(),
+              isAuthenticated: true,
+              isInitialized: true,
+              isLoading: false,
+            });
+            return;
+          } else if (cachedUser && (storedToken || getAuthToken())) {
+            // Keep cached session if backend fetch was non-401 (e.g. temporary network offline)
+            set({
+              user: cachedUser,
+              token: getAuthToken() || storedToken,
               isAuthenticated: true,
               isInitialized: true,
               isLoading: false,
@@ -66,8 +88,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
           }
         }
       } catch (err) {
-        console.warn('[AuthStore] Initialization failed:', err);
+        console.warn('[AuthStore] Initialization error:', err);
       }
+
       set({
         user: null,
         token: null,
@@ -82,6 +105,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
       try {
         const res = await api.post<TokenResponse>('/api/v1/auth/login', payload);
         setAuthToken(res.access_token, res.refresh_token);
+        if (res.user) {
+          await storage.setUser(res.user);
+        }
         set({
           user: res.user,
           token: res.access_token,
@@ -107,6 +133,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
       try {
         const res = await api.post<TokenResponse>('/api/v1/auth/register', payload);
         setAuthToken(res.access_token, res.refresh_token);
+        if (res.user) {
+          await storage.setUser(res.user);
+        }
         set({
           user: res.user,
           token: res.access_token,
@@ -136,6 +165,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
         });
         if (res && res.access_token) {
           setAuthToken(res.access_token, res.refresh_token);
+          if (res.user) {
+            await storage.setUser(res.user);
+          }
           set({
             user: res.user,
             token: res.access_token,
@@ -144,11 +176,15 @@ export const useAuthStore = create<AuthState>((set, get) => {
             error: null,
           });
         } else {
-          set((state) => ({
-            user: state.user ? { ...state.user, is_verified: true } : state.user,
-            isLoading: false,
-            error: null,
-          }));
+          set((state) => {
+            const updatedUser = state.user ? { ...state.user, is_verified: true } : state.user;
+            if (updatedUser) storage.setUser(updatedUser);
+            return {
+              user: updatedUser,
+              isLoading: false,
+              error: null,
+            };
+          });
         }
         return res;
       } catch (err) {
@@ -166,6 +202,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
     fetchCurrentUser: async () => {
       try {
         const user = await api.get<CitizenProfile>('/api/v1/auth/me');
+        if (user) {
+          await storage.setUser(user);
+        }
         set({ user, token: getAuthToken(), isAuthenticated: true });
         return user;
       } catch (err) {

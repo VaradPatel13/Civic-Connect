@@ -1,6 +1,5 @@
 /**
  * Home / Dashboard Screen — CivicConnect Mobile
- * Clean, production-grade interface built with modular dashboard components.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -8,14 +7,16 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 
 import {
   EmptyState,
   ErrorState,
-  FAB,
   FeaturedCard,
   ReportRow,
 } from '@src/components/ui';
@@ -30,11 +31,14 @@ import { useDashboardStore } from '@src/store';
 import type { Report } from '@src/types';
 import { getCurrentLocation, DeviceLocation } from '@src/lib/location';
 
+const ITEMS_PER_PAGE = 10;
+
 export default function DashboardScreen() {
   const router = useRouter();
 
   const { reports, isLoading, error, fetchDashboard } = useDashboardStore();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
   const [deviceLoc, setDeviceLoc] = useState<DeviceLocation | null>(null);
   const [loadingLoc, setLoadingLoc] = useState(false);
@@ -57,13 +61,25 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }, [fetchDashboard, loadLocation]);
 
+  const handleCategorySelect = (category: string | null) => {
+    setSelectedCategory(category);
+    setCurrentPage(1);
+  };
+
   const filteredReports = reports.filter((r) => {
     if (!selectedCategory) return true;
     return (r.category || '').toLowerCase().includes(selectedCategory.toLowerCase());
   });
 
-  const featured = filteredReports[0];
-  const rest = filteredReports.slice(1);
+  const totalPages = Math.max(1, Math.ceil(filteredReports.length / ITEMS_PER_PAGE));
+  const validCurrentPage = Math.min(currentPage, totalPages);
+
+  const startIndex = (validCurrentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedReports = filteredReports.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+  const isFirstPage = validCurrentPage === 1;
+  const featured = isFirstPage ? paginatedReports[0] : null;
+  const rest = isFirstPage ? paginatedReports.slice(1) : paginatedReports;
 
   const handleViewReport = (id: string) => {
     router.push({ pathname: '/report-details', params: { id } });
@@ -104,7 +120,7 @@ export default function DashboardScreen() {
         {/* 5. Trending Categories */}
         <CategoryChips
           selectedCategory={selectedCategory}
-          onSelectCategory={setSelectedCategory}
+          onSelectCategory={handleCategorySelect}
         />
 
         {/* 6. Recent Nearby Reports */}
@@ -138,13 +154,70 @@ export default function DashboardScreen() {
                   onPress={() => handleViewReport(r.id)}
                 />
               ))}
+
+              {totalPages > 1 && (
+                <View style={styles.paginationRow}>
+                  <TouchableOpacity
+                    disabled={validCurrentPage === 1}
+                    style={[
+                      styles.pageBtn,
+                      validCurrentPage === 1 && styles.pageBtnDisabled,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setCurrentPage((prev) => Math.max(1, prev - 1));
+                    }}
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={16}
+                      color={validCurrentPage === 1 ? '#94A3B8' : '#0F172A'}
+                    />
+                    <Text
+                      style={[
+                        styles.pageBtnText,
+                        validCurrentPage === 1 && styles.pageBtnTextDisabled,
+                      ]}
+                    >
+                      Previous
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.pageInfoText}>
+                    Page {validCurrentPage} of {totalPages}
+                  </Text>
+
+                  <TouchableOpacity
+                    disabled={validCurrentPage === totalPages}
+                    style={[
+                      styles.pageBtn,
+                      validCurrentPage === totalPages && styles.pageBtnDisabled,
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setCurrentPage((prev) => Math.min(totalPages, prev + 1));
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.pageBtnText,
+                        validCurrentPage === totalPages && styles.pageBtnTextDisabled,
+                      ]}
+                    >
+                      Next
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color={validCurrentPage === totalPages ? '#94A3B8' : '#0F172A'}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
         </View>
       </ScrollView>
-
-      {/* Floating Action Button (Cleanly positioned above tab bar) */}
-      <FAB onPress={() => router.push('/camera')} />
     </View>
   );
 }
@@ -192,5 +265,40 @@ const styles = StyleSheet.create({
     height: 96,
     backgroundColor: '#E2E8F0',
     borderRadius: 12,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    paddingHorizontal: 4,
+  },
+  pageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  pageBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  pageBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  pageBtnTextDisabled: {
+    color: '#94A3B8',
+  },
+  pageInfoText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
   },
 });

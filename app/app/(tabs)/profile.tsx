@@ -1,31 +1,85 @@
+/**
+ * Profile Tab Screen — CivicConnect Mobile
+ * Clean, production-grade citizen account portal matching the app design system.
+ */
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
+  ActivityIndicator,
   Alert,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
-  useColorScheme,
-  Platform,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { TOKENS } from '@src/theme/tokens';
+import * as Haptics from 'expo-haptics';
+
+import { api } from '@src/lib/api';
 import { useAuthStore } from '@src/store/useAuthStore';
+import type { Report } from '@src/types';
+
+interface RewardSummary {
+  total_points: number;
+  tier?: string;
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const p = isDark ? TOKENS.colors.dark : TOKENS.colors.light;
+  const insets = useSafeAreaInsets();
 
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
 
-  const displayName = user?.display_name ?? 'Active Citizen';
-  const phone = user?.phone ?? '8007182716';
-  const trustScore = user?.trust_score ?? 94;
-  const isVerified = user?.is_verified ?? true;
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filedCount, setFiledCount] = useState<number>(0);
+  const [resolvedCount, setResolvedCount] = useState<number>(0);
+  const [pointsCount, setPointsCount] = useState<number>(0);
+
+  const loadProfileData = useCallback(async () => {
+    try {
+      // 1. Fetch user's filed reports to calculate Filed & Resolved counts
+      const userReports = await api.get<Report[]>('/api/v1/reports/?mine_only=true').catch(() => []);
+      if (Array.isArray(userReports)) {
+        setFiledCount(userReports.length);
+        const resolved = userReports.filter(
+          (r) => (r.status || '').toLowerCase() === 'resolved'
+        ).length;
+        setResolvedCount(resolved);
+      }
+
+      // 2. Fetch user's actual rewards summary
+      const rewardSummary = await api.get<RewardSummary>('/api/v1/rewards/summary').catch(() => null);
+      if (rewardSummary?.total_points !== undefined) {
+        setPointsCount(rewardSummary.total_points);
+      }
+    } catch {
+      // Keep fallbacks on failure
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    loadProfileData();
+  }, [loadProfileData]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadProfileData();
+  };
+
+  const displayName = user?.display_name || 'Citizen User';
+  const phone = user?.phone || '';
+  const trustScore = user?.trust_score ?? 100;
+  const isVerified = user?.is_verified ?? false;
+  const roleTitle = user?.role ? user.role.toUpperCase() : 'CITIZEN';
 
   const initials = displayName
     .split(' ')
@@ -35,6 +89,7 @@ export default function ProfileScreen() {
     .toUpperCase();
 
   const handleSignOut = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert('Sign Out', 'Are you sure you want to log out of CivicConnect?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -49,40 +104,56 @@ export default function ProfileScreen() {
   };
 
   const handleSettingTap = (label: string) => {
-    Alert.alert(label, `${label} preferences updated.`);
+    Haptics.selectionAsync();
+    Alert.alert(label, `${label} section accessed.`);
   };
 
   return (
-    <View style={[styles.screen, { backgroundColor: p.bg }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+    <View style={styles.screen}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#059669"
+          />
+        }
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: Math.max(insets.top + 6, 40) },
+        ]}
+      >
         {/* Header */}
         <View style={styles.headerContainer}>
-          <Text style={[styles.kickerText, { color: p.accentPrimary }]}>CITIZEN PROFILE</Text>
-          <Text style={[styles.headerTitle, { color: p.textPrimary }]}>Account & Impact</Text>
+          <Text style={styles.kickerText}>CITIZEN ACCOUNT</Text>
+          <Text style={styles.headerTitle}>Profile & Settings</Text>
         </View>
 
         {/* Profile Card */}
-        <View style={[styles.profileCard, { backgroundColor: p.surface, borderColor: p.border }]}>
-          <View style={[styles.avatarBox, { backgroundColor: `${p.accentPrimary}20` }]}>
-            <Text style={[styles.avatarText, { color: p.accentPrimary }]}>{initials}</Text>
+        <View style={styles.profileCard}>
+          <View style={styles.avatarBox}>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
 
           <View style={styles.profileDetails}>
             <View style={styles.nameRow}>
-              <Text style={[styles.nameText, { color: p.textPrimary }]} numberOfLines={1}>
+              <Text style={styles.nameText} numberOfLines={1}>
                 {displayName}
               </Text>
-              {isVerified && <Ionicons name="checkmark-circle" size={16} color={p.accentCyan} />}
+              {isVerified ? (
+                <Ionicons name="checkmark-circle" size={16} color="#059669" />
+              ) : null}
             </View>
 
-            <Text style={[styles.phoneText, { color: p.textSecondary }]}>+91 {phone}</Text>
+            {phone ? <Text style={styles.phoneText}>+91 {phone}</Text> : null}
 
             <View style={styles.badgeRow}>
-              <View style={[styles.pillBadge, { backgroundColor: `${p.accentLime}20`, borderColor: `${p.accentLime}40` }]}>
-                <Text style={[styles.pillText, { color: p.accentLime }]}>Ward 12 Guardian</Text>
+              <View style={styles.pillBadgeEmerald}>
+                <Text style={styles.pillTextEmerald}>{roleTitle}</Text>
               </View>
-              <View style={[styles.pillBadge, { backgroundColor: p.pillBg, borderColor: p.border }]}>
-                <Text style={[styles.pillText, { color: p.textSecondary }]}>Score {trustScore}%</Text>
+              <View style={styles.pillBadgeSlate}>
+                <Text style={styles.pillTextSlate}>Score {trustScore}%</Text>
               </View>
             </View>
           </View>
@@ -90,83 +161,89 @@ export default function ProfileScreen() {
 
         {/* Bento Stats Matrix */}
         <View style={styles.statsMatrix}>
-          <View style={[styles.statTile, { backgroundColor: p.surface, borderColor: p.border }]}>
-            <Ionicons name="document-text-outline" size={20} color={p.accentPrimary} />
-            <Text style={[styles.statNum, { color: p.textPrimary }]}>14</Text>
-            <Text style={[styles.statLabel, { color: p.textSecondary }]}>Filed</Text>
+          <View style={styles.statTile}>
+            <Ionicons name="document-text-outline" size={18} color="#059669" />
+            <Text style={styles.statNum}>{loading ? '-' : filedCount}</Text>
+            <Text style={styles.statLabel}>Filed</Text>
           </View>
 
-          <View style={[styles.statTile, { backgroundColor: p.surface, borderColor: p.border }]}>
-            <Ionicons name="checkmark-done-circle-outline" size={20} color={p.accentLime} />
-            <Text style={[styles.statNum, { color: p.textPrimary }]}>11</Text>
-            <Text style={[styles.statLabel, { color: p.textSecondary }]}>Resolved</Text>
+          <View style={styles.statTile}>
+            <Ionicons name="checkmark-circle-outline" size={18} color="#059669" />
+            <Text style={styles.statNum}>{loading ? '-' : resolvedCount}</Text>
+            <Text style={styles.statLabel}>Resolved</Text>
           </View>
 
-          <View style={[styles.statTile, { backgroundColor: p.surface, borderColor: p.border }]}>
-            <Ionicons name="trophy-outline" size={20} color={p.accentAmber} />
-            <Text style={[styles.statNum, { color: p.textPrimary }]}>850</Text>
-            <Text style={[styles.statLabel, { color: p.textSecondary }]}>Points</Text>
+          <View style={styles.statTile}>
+            <Ionicons name="trophy-outline" size={18} color="#D97706" />
+            <Text style={styles.statNum}>{loading ? '-' : pointsCount}</Text>
+            <Text style={styles.statLabel}>Points</Text>
           </View>
         </View>
 
-        {/* Settings Group 1: Dispatch Account */}
+        {/* Settings Group 1: Account */}
         <View style={styles.settingsSection}>
-          <Text style={[styles.sectionHeading, { color: p.textMuted }]}>ACCOUNT & LOCATION</Text>
-          <View style={[styles.groupContainer, { backgroundColor: p.surface, borderColor: p.border }]}>
+          <Text style={styles.sectionHeading}>ACCOUNT & LOCATION</Text>
+          <View style={styles.groupContainer}>
             <TouchableOpacity style={styles.settingRow} onPress={() => handleSettingTap('Personal Details')}>
-              <View style={[styles.settingIcon, { backgroundColor: `${p.accentPrimary}15` }]}>
-                <Ionicons name="person-outline" size={16} color={p.accentPrimary} />
+              <View style={styles.settingIcon}>
+                <Ionicons name="person-outline" size={16} color="#059669" />
               </View>
-              <Text style={[styles.settingLabel, { color: p.textPrimary }]}>Personal Information</Text>
-              <Ionicons name="chevron-forward" size={16} color={p.textMuted} />
+              <Text style={styles.settingLabel}>Personal Information</Text>
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
             </TouchableOpacity>
 
-            <View style={[styles.rowDivider, { backgroundColor: p.border }]} />
+            <View style={styles.rowDivider} />
 
             <TouchableOpacity style={styles.settingRow} onPress={() => handleSettingTap('Primary Ward')}>
-              <View style={[styles.settingIcon, { backgroundColor: `${p.accentCyan}15` }]}>
-                <Ionicons name="location-outline" size={16} color={p.accentCyan} />
+              <View style={[styles.settingIcon, { backgroundColor: '#F0F9FF' }]}>
+                <Ionicons name="location-outline" size={16} color="#0284C7" />
               </View>
-              <Text style={[styles.settingLabel, { color: p.textPrimary }]}>Ward & Jurisdiction</Text>
-              <Text style={[styles.settingValue, { color: p.textMuted }]}>Shivajinagar</Text>
-              <Ionicons name="chevron-forward" size={16} color={p.textMuted} />
+              <Text style={styles.settingLabel}>Ward & Jurisdiction</Text>
+              <Text style={styles.settingValue}>Pune Central</Text>
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Settings Group 2: App Preferences */}
+        {/* Settings Group 2: Preferences */}
         <View style={styles.settingsSection}>
-          <Text style={[styles.sectionHeading, { color: p.textMuted }]}>PREFERENCES & SECURITY</Text>
-          <View style={[styles.groupContainer, { backgroundColor: p.surface, borderColor: p.border }]}>
+          <Text style={styles.sectionHeading}>PREFERENCES & SECURITY</Text>
+          <View style={styles.groupContainer}>
             <TouchableOpacity style={styles.settingRow} onPress={() => handleSettingTap('Language')}>
-              <View style={[styles.settingIcon, { backgroundColor: `${p.accentAmber}15` }]}>
-                <Ionicons name="language-outline" size={16} color={p.accentAmber} />
+              <View style={[styles.settingIcon, { backgroundColor: '#FEF3C7' }]}>
+                <Ionicons name="language-outline" size={16} color="#D97706" />
               </View>
-              <Text style={[styles.settingLabel, { color: p.textPrimary }]}>App Language</Text>
-              <Text style={[styles.settingValue, { color: p.textMuted }]}>English</Text>
-              <Ionicons name="chevron-forward" size={16} color={p.textMuted} />
+              <Text style={styles.settingLabel}>App Language</Text>
+              <Text style={styles.settingValue}>
+                {user?.preferred_language ? user.preferred_language.toUpperCase() : 'ENGLISH'}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
             </TouchableOpacity>
 
-            <View style={[styles.rowDivider, { backgroundColor: p.border }]} />
+            <View style={styles.rowDivider} />
 
             <TouchableOpacity style={styles.settingRow} onPress={() => handleSettingTap('Notification Rules')}>
-              <View style={[styles.settingIcon, { backgroundColor: `${p.accentLime}15` }]}>
-                <Ionicons name="notifications-outline" size={16} color={p.accentLime} />
+              <View style={styles.settingIcon}>
+                <Ionicons name="notifications-outline" size={16} color="#059669" />
               </View>
-              <Text style={[styles.settingLabel, { color: p.textPrimary }]}>Push Dispatch Alerts</Text>
-              <Ionicons name="chevron-forward" size={16} color={p.textMuted} />
+              <Text style={styles.settingLabel}>Push Dispatch Alerts</Text>
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Sign Out Button */}
-        <TouchableOpacity activeOpacity={0.8} style={[styles.signOutButton, { backgroundColor: `${p.accentRose}15`, borderColor: `${p.accentRose}30` }]} onPress={handleSignOut}>
-          <Ionicons name="log-out-outline" size={18} color={p.accentRose} />
-          <Text style={[styles.signOutText, { color: p.accentRose }]}>Sign Out Session</Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={styles.signOutButton}
+          onPress={handleSignOut}
+        >
+          <Ionicons name="log-out-outline" size={18} color="#DC2626" />
+          <Text style={styles.signOutText}>Sign Out Session</Text>
         </TouchableOpacity>
 
         {/* Footer info */}
-        <Text style={[styles.footerText, { color: p.textMuted }]}>CivicConnect Mobile v1.2.0 • Pune City Ward 12</Text>
+        <Text style={styles.footerText}>CivicConnect Mobile v1.2.0 • Pune Municipal Corporation</Text>
       </ScrollView>
     </View>
   );
@@ -175,48 +252,58 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
   },
   scrollContent: {
-    paddingTop: Platform.select({ ios: 56, android: 44 }) ?? 44,
     paddingHorizontal: 20,
     paddingBottom: 40,
-    gap: 20,
+    gap: 16,
   },
-  headerContainer: {},
+  headerContainer: {
+    marginBottom: 4,
+  },
   kickerText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#059669',
+    letterSpacing: 0.5,
     marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.4,
   },
 
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     borderWidth: 1,
-    padding: 16,
-    gap: 14,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    gap: 12,
   },
   avatarBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#059669',
   },
   profileDetails: {
     flex: 1,
-    gap: 4,
+    gap: 2,
   },
   nameRow: {
     flexDirection: 'row',
@@ -224,11 +311,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   nameText: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   phoneText: {
     fontSize: 12,
+    color: '#64748B',
     fontWeight: '500',
   },
   badgeRow: {
@@ -237,78 +326,105 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 4,
   },
-  pillBadge: {
-    borderRadius: 10,
+  pillBadgeEmerald: {
+    borderRadius: 6,
+    backgroundColor: '#ECFDF5',
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
   },
-  pillText: {
-    fontSize: 9,
-    fontWeight: '800',
+  pillTextEmerald: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  pillBadgeSlate: {
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  pillTextSlate: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
   },
 
   statsMatrix: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   statTile: {
     flex: 1,
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
     borderWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    borderColor: '#E2E8F0',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
   },
   statNum: {
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   statLabel: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '500',
+    color: '#64748B',
   },
 
   settingsSection: {
-    gap: 8,
+    gap: 6,
   },
   sectionHeading: {
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.8,
   },
   groupContainer: {
-    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     borderWidth: 1,
+    borderColor: '#E2E8F0',
     overflow: 'hidden',
   },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    gap: 12,
+    padding: 12,
+    gap: 10,
   },
   settingIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
     alignItems: 'center',
     justifyContent: 'center',
   },
   settingLabel: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
+    color: '#334155',
     flex: 1,
   },
   settingValue: {
     fontSize: 12,
     fontWeight: '500',
+    color: '#64748B',
     marginRight: 4,
   },
   rowDivider: {
     height: 1,
-    marginLeft: 58,
+    backgroundColor: '#F1F5F9',
+    marginLeft: 50,
   },
 
   signOutButton: {
@@ -316,19 +432,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 16,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 10,
     borderWidth: 1,
-    paddingVertical: 14,
-    marginTop: 8,
+    borderColor: '#FCA5A5',
+    paddingVertical: 12,
+    marginTop: 4,
   },
   signOutText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
+    color: '#DC2626',
   },
   footerText: {
     textAlign: 'center',
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 10,
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 6,
   },
-});
+});

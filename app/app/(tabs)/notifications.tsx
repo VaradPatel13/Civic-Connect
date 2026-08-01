@@ -1,20 +1,32 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  SectionList,
-  TouchableOpacity,
+  ActivityIndicator,
   RefreshControl,
+  SectionList,
   StyleSheet,
-  useColorScheme,
-  Platform,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { TOKENS } from '@src/theme/tokens';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+
+import { api } from '@src/lib/api';
 
 type NotificationType = 'report_update' | 'comment' | 'status_change' | 'system';
 type NotifStatus = 'read' | 'unread';
+
+interface BackendNotification {
+  id: string;
+  title: string;
+  message: string;
+  notification_type: string;
+  read_at: string | null;
+  report_id: string | null;
+  created_at: string;
+}
 
 interface NotificationItem {
   id: string;
@@ -23,15 +35,37 @@ interface NotificationItem {
   body: string;
   status: NotifStatus;
   time: string;
+  createdAt: Date;
   reportId?: string;
 }
 
-const TYPE_CONFIG: Record<NotificationType, { icon: string; colorKey: keyof typeof TOKENS.colors.dark }> = {
-  report_update: { icon: 'flag', colorKey: 'accentPrimary' },
-  comment: { icon: 'chatbubble-ellipses', colorKey: 'accentCyan' },
-  status_change: { icon: 'checkmark-circle', colorKey: 'accentLime' },
-  system: { icon: 'information-circle', colorKey: 'accentAmber' },
+const TYPE_CONFIG: Record<NotificationType, { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }> = {
+  report_update: { icon: 'flag-outline', color: '#059669', bg: '#ECFDF5' },
+  comment: { icon: 'chatbubble-ellipses-outline', color: '#0284C7', bg: '#F0F9FF' },
+  status_change: { icon: 'checkmark-circle-outline', color: '#059669', bg: '#ECFDF5' },
+  system: { icon: 'information-circle-outline', color: '#D97706', bg: '#FEF3C7' },
 };
+
+function formatTimeAgo(dateStr: string): string {
+  const now = new Date();
+  const created = new Date(dateStr);
+  const diffMs = Math.max(0, now.getTime() - created.getTime());
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 60) return `${Math.max(1, diffMins)}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  return `${diffDays}d`;
+}
+
+function mapNotificationType(rawType: string): NotificationType {
+  const t = (rawType || '').toLowerCase();
+  if (t === 'report_update') return 'report_update';
+  if (t === 'resolution' || t === 'status_change') return 'status_change';
+  if (t === 'comment' || t === 'assignment') return 'comment';
+  return 'system';
+}
 
 function groupByDay(items: NotificationItem[]) {
   const groups: Record<string, NotificationItem[]> = {
@@ -42,7 +76,7 @@ function groupByDay(items: NotificationItem[]) {
   items.forEach((item) => {
     if (item.time.endsWith('m') || item.time.endsWith('h')) {
       groups['Today'].push(item);
-    } else if (item.time.includes('1d')) {
+    } else if (item.time === '1d') {
       groups['Yesterday'].push(item);
     } else {
       groups['Earlier'].push(item);
@@ -53,77 +87,78 @@ function groupByDay(items: NotificationItem[]) {
     .map(([title, data]) => ({ title, data }));
 }
 
-const MOCK_NOTIFS: NotificationItem[] = [
-  {
-    id: '1',
-    type: 'report_update',
-    title: 'Ward Officer Dispatched',
-    body: 'Pothole report #102 on FC Road has been assigned to Junior Engineer R. Deshmukh.',
-    status: 'unread',
-    time: '15m',
-    reportId: '1',
-  },
-  {
-    id: '2',
-    type: 'comment',
-    title: 'New Community Comment',
-    body: 'Citizen Priya K. commented: "Water level is rising, please expedite repair."',
-    status: 'unread',
-    time: '2h',
-    reportId: '1',
-  },
-  {
-    id: '3',
-    type: 'status_change',
-    title: 'Work In Progress',
-    body: 'Streetlight repair crew is currently on-site on University Road.',
-    status: 'unread',
-    time: '4h',
-    reportId: '2',
-  },
-  {
-    id: '4',
-    type: 'system',
-    title: 'Civic Points Awarded',
-    body: 'You earned +50 XP for verifying a resolved issue in Ward 12.',
-    status: 'read',
-    time: '1d',
-  },
-  {
-    id: '5',
-    type: 'status_change',
-    title: 'Issue Resolved & Closed',
-    body: 'Drainage blockage near Kothrud Bus Depot has been cleared.',
-    status: 'read',
-    time: '3d',
-    reportId: '3',
-  },
-];
-
 export default function NotificationsScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const p = isDark ? TOKENS.colors.dark : TOKENS.colors.light;
+  const insets = useSafeAreaInsets();
 
-  const [notifs, setNotifs] = useState<NotificationItem[]>(MOCK_NOTIFS);
+  const [notifs, setNotifs] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const data = await api.get<BackendNotification[]>('/api/v1/notifications/');
+      if (Array.isArray(data)) {
+        const mapped: NotificationItem[] = data.map((n) => ({
+          id: n.id,
+          type: mapNotificationType(n.notification_type),
+          title: n.title,
+          body: n.message,
+          status: n.read_at ? 'read' : 'unread',
+          time: formatTimeAgo(n.created_at),
+          createdAt: new Date(n.created_at),
+          reportId: n.report_id || undefined,
+        }));
+        setNotifs(mapped);
+      } else {
+        setNotifs([]);
+      }
+    } catch {
+      setNotifs([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 500);
-  }, []);
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   const unreadCount = notifs.filter((n) => n.status === 'unread').length;
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
+    Haptics.selectionAsync();
+    const unreadIds = notifs.filter((n) => n.status === 'unread').map((n) => n.id);
     setNotifs((prev) => prev.map((n) => ({ ...n, status: 'read' as NotifStatus })));
+
+    if (unreadIds.length > 0) {
+      try {
+        await api.post('/api/v1/notifications/read', { notification_ids: unreadIds });
+      } catch {
+        // Ignored
+      }
+    }
   };
 
-  const handlePressItem = (item: NotificationItem) => {
-    setNotifs((prev) =>
-      prev.map((n) => (n.id === item.id ? { ...n, status: 'read' as NotifStatus } : n)),
-    );
+  const handlePressItem = async (item: NotificationItem) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (item.status === 'unread') {
+      setNotifs((prev) =>
+        prev.map((n) => (n.id === item.id ? { ...n, status: 'read' as NotifStatus } : n)),
+      );
+      try {
+        await api.post('/api/v1/notifications/read', { notification_ids: [item.id] });
+      } catch {
+        // Ignored
+      }
+    }
+
     if (item.reportId) {
       router.push({ pathname: '/report-details', params: { id: item.reportId } });
     }
@@ -132,30 +167,39 @@ export default function NotificationsScreen() {
   const grouped = groupByDay(notifs);
 
   return (
-    <View style={[styles.screen, { backgroundColor: p.bg }]}>
+    <View style={styles.screen}>
       {/* Header Bar */}
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { paddingTop: Math.max(insets.top + 6, 40) }]}>
         <View>
-          <Text style={[styles.kickerText, { color: p.accentPrimary }]}>NOTIFICATIONS</Text>
-          <Text style={[styles.headerTitle, { color: p.textPrimary }]}>District Alerts</Text>
+          <Text style={styles.kickerText}>DISTRICT ALERTS</Text>
+          <Text style={styles.headerTitle}>Notifications</Text>
         </View>
 
         {unreadCount > 0 && (
-          <TouchableOpacity activeOpacity={0.8} style={[styles.markAllButton, { backgroundColor: p.pillBg }]} onPress={handleMarkAllRead}>
-            <Ionicons name="checkmark-done" size={14} color={p.accentPrimary} />
-            <Text style={[styles.markAllText, { color: p.accentPrimary }]}>Mark read ({unreadCount})</Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.markAllButton}
+            onPress={handleMarkAllRead}
+          >
+            <Ionicons name="checkmark-done" size={14} color="#059669" />
+            <Text style={styles.markAllText}>Mark read ({unreadCount})</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Content */}
-      {notifs.length === 0 ? (
+      {/* Content List */}
+      {loading ? (
         <View style={styles.emptyContainer}>
-          <View style={[styles.emptyIconCircle, { backgroundColor: p.pillBg }]}>
-            <Ionicons name="notifications-off-outline" size={32} color={p.textMuted} />
+          <ActivityIndicator size="large" color="#059669" />
+          <Text style={styles.emptySub}>Fetching district notifications...</Text>
+        </View>
+      ) : notifs.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="notifications-off-outline" size={28} color="#059669" />
           </View>
-          <Text style={[styles.emptyTitle, { color: p.textPrimary }]}>No active alerts</Text>
-          <Text style={[styles.emptySub, { color: p.textSecondary }]}>
+          <Text style={styles.emptyTitle}>No active alerts</Text>
+          <Text style={styles.emptySub}>
             When officers update your reported issues, real-time alerts will show up here.
           </Text>
         </View>
@@ -166,16 +210,19 @@ export default function NotificationsScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={p.accentPrimary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#059669"
+            />
           }
           renderSectionHeader={({ section: { title } }) => (
-            <View style={[styles.sectionHeaderWrap, { backgroundColor: p.bg }]}>
-              <Text style={[styles.sectionHeaderText, { color: p.textMuted }]}>{title}</Text>
+            <View style={styles.sectionHeaderWrap}>
+              <Text style={styles.sectionHeaderText}>{title}</Text>
             </View>
           )}
           renderItem={({ item }) => {
             const config = TYPE_CONFIG[item.type];
-            const iconColor = p[config.colorKey] as string;
             const isUnread = item.status === 'unread';
 
             return (
@@ -183,30 +230,34 @@ export default function NotificationsScreen() {
                 activeOpacity={0.78}
                 style={[
                   styles.notifRow,
-                  {
-                    backgroundColor: isUnread ? `${p.accentPrimary}08` : p.surface,
-                    borderColor: isUnread ? `${p.accentPrimary}30` : p.border,
-                  },
+                  isUnread && styles.notifRowUnread,
                 ]}
-                onPress={() => handlePressItem(item)}>
-                <View style={[styles.iconBox, { backgroundColor: `${iconColor}15` }]}>
-                  <Ionicons name={config.icon as any} size={18} color={iconColor} />
+                onPress={() => handlePressItem(item)}
+              >
+                <View style={[styles.iconBox, { backgroundColor: config.bg }]}>
+                  <Ionicons name={config.icon} size={18} color={config.color} />
                 </View>
 
                 <View style={styles.textContent}>
                   <View style={styles.titleRow}>
-                    <Text style={[styles.notifTitle, { color: p.textPrimary, fontWeight: isUnread ? '800' : '600' }]} numberOfLines={1}>
+                    <Text
+                      style={[
+                        styles.notifTitle,
+                        isUnread && styles.notifTitleUnread,
+                      ]}
+                      numberOfLines={1}
+                    >
                       {item.title}
                     </Text>
-                    <Text style={[styles.timeText, { color: p.textMuted }]}>{item.time}</Text>
+                    <Text style={styles.timeText}>{item.time}</Text>
                   </View>
 
-                  <Text style={[styles.notifBody, { color: p.textSecondary }]} numberOfLines={2}>
+                  <Text style={styles.notifBody} numberOfLines={2}>
                     {item.body}
                   </Text>
                 </View>
 
-                {isUnread && <View style={[styles.unreadDot, { backgroundColor: p.accentPrimary }]} />}
+                {isUnread && <View style={styles.unreadDot} />}
               </TouchableOpacity>
             );
           }}
@@ -219,37 +270,46 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingTop: Platform.select({ ios: 56, android: 44 }) ?? 44,
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   kickerText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#059669',
+    letterSpacing: 0.5,
     marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.4,
   },
   markAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    borderRadius: 12,
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 6,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
   },
   markAllText: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
+    color: '#059669',
   },
 
   listContent: {
@@ -258,13 +318,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionHeaderWrap: {
-    paddingVertical: 8,
-    marginTop: 8,
+    paddingVertical: 10,
   },
   sectionHeaderText: {
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
 
@@ -272,20 +332,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     borderWidth: 1,
-    padding: 14,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 8,
+  },
+  notifRowUnread: {
+    backgroundColor: '#FAFAFA',
+    borderColor: '#A7F3D0',
   },
   iconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   textContent: {
     flex: 1,
-    gap: 4,
+    gap: 2,
   },
   titleRow: {
     flexDirection: 'row',
@@ -294,21 +361,30 @@ const styles = StyleSheet.create({
   },
   notifTitle: {
     fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
     flex: 1,
-    paddingRight: 8,
+    paddingRight: 6,
+  },
+  notifTitleUnread: {
+    fontWeight: '700',
+    color: '#0F172A',
   },
   timeText: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
   },
   notifBody: {
     fontSize: 12,
+    color: '#475569',
     lineHeight: 17,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    backgroundColor: '#059669',
     marginTop: 4,
   },
 
@@ -317,22 +393,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 40,
-    gap: 10,
+    gap: 8,
   },
   emptyIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 4,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   emptySub: {
     fontSize: 12,
+    color: '#64748B',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 17,
   },
-});
+});
