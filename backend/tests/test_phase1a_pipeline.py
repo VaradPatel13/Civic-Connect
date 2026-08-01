@@ -328,7 +328,9 @@ async def test_07_quality_gate_sees_all_four_outputs_after_staggered_branches():
 
 @pytest.mark.asyncio
 async def test_08_verified_reaches_end(mock_engine, base_initial_state):
-    graph = create_civic_pipeline_graph(ai_engine=mock_engine)
+    from backend.tests.test_phase1d_geo import make_mock_db_factory
+    mock_db = make_mock_db_factory(("WARD_03", "Shivajinagar", "Zone 2", True, 100.0))
+    graph = create_civic_pipeline_graph(ai_engine=mock_engine, db_session_factory=mock_db)
     final = await graph.ainvoke(base_initial_state)
     assert final["pipeline_status"] == STATUS_COMPLETED
     assert final["verification_decision"] == DECISION_VERIFIED
@@ -667,7 +669,10 @@ async def test_30a_geo_validator_standalone_still_works():
     from backend.agents.geo_validator import GeoValidationAgent
     agent = GeoValidationAgent(db_session_factory=None)
     output = await agent.process({"report_id": "bc-geo", "raw_payload": {"latitude": 18.55, "longitude": 73.80}})
-    assert output["agent_outputs"]["geo_validation"]["boundary_matched"] is True
+    geo = output["agent_outputs"]["geo_validation"]
+    assert geo["analysis_status"] == "PARTIAL"
+    assert geo["ward_name"] == "Aundh-Baner"
+    assert geo["boundary_matched"] is None  # Bounding box is dev approximation, not authoritative PostGIS match
 
 
 def test_30b_classifier_fallback_standalone_still_works():

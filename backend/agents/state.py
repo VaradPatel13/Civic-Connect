@@ -105,8 +105,15 @@ class GeoValidationResult(TypedDict, total=False):
     ward_id: str | None
     ward_name: str | None
     zone_name: str | None
-    boundary_matched: bool
+    boundary_matched: bool | None
     confidence: float
+    analysis_status: str  # "SUCCESS", "PARTIAL", "UNAVAILABLE"
+    coordinates_valid: bool | None
+    municipality_matched: bool | None
+    near_boundary: bool | None
+    signals: dict[str, Any]
+    risk_flags: list[str]
+    details: dict[str, Any]
 
 
 class IssueIntelligenceResult(TypedDict, total=False):

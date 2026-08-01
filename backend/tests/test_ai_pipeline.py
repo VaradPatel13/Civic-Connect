@@ -51,7 +51,7 @@ def test_rate_limiter_in_memory_fallback():
 
 @pytest.mark.asyncio
 async def test_geo_validator_bounding_box_match():
-    """Verify Geo-Validator correctly matches Pune PMC Aundh-Baner ward coordinates."""
+    """Verify Geo-Validator correctly matches Pune PMC Aundh-Baner ward coordinates using dev bbox."""
     agent = GeoValidationAgent(db_session_factory=None)
     state = {
         "report_id": "test-rep-001",
@@ -60,9 +60,10 @@ async def test_geo_validator_bounding_box_match():
     output = await agent.process(state)
     geo_res = output["agent_outputs"]["geo_validation"]
 
-    assert geo_res["boundary_matched"] is True
+    assert geo_res["analysis_status"] == "PARTIAL"
     assert geo_res["ward_name"] == "Aundh-Baner"
-    assert geo_res["confidence"] > 0.90
+    assert geo_res["boundary_matched"] is None
+    assert geo_res["signals"]["approximate_boundary_match"] is True
 
 
 
@@ -157,8 +158,10 @@ async def test_full_pipeline_graph_execution():
     Phase-1A: graph executes Supervisor, Safety, Visual, Geo, Issue Intelligence,
     and Quality Gate. Downstream Enhancer/Router/Notifier are NOT part of Phase-1.
     """
+    from backend.tests.test_phase1d_geo import make_mock_db_factory
+    mock_db = make_mock_db_factory(("WARD_01", "Aundh-Baner", "Zone 1", True, 50.0))
     mock_engine = MockAIEngine()
-    graph = create_civic_pipeline_graph(ai_engine=mock_engine)
+    graph = create_civic_pipeline_graph(ai_engine=mock_engine, db_session_factory=mock_db)
 
     initial_state = {
         "report_id": "report-12345",

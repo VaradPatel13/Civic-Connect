@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     visual_gps_consistency_threshold_meters: float = 5000.0  # 5.0 km heuristic threshold
     visual_dhash_threshold: int = 10  # Hamming distance <= 10 bits for perceptual dHash match
 
+    # ── Geo Verification Thresholds ───────────────────────────────────
+    geo_boundary_uncertainty_meters: float = 30.0  # 30 meters boundary uncertainty buffer
+
     cloudinary_url: str = ""
 
 

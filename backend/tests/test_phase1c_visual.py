@@ -32,13 +32,20 @@ from backend.core.ai_engine import BaseAIEngine
 from backend.core.config import settings
 
 
+from backend.agents.forensics import global_duplicate_registry
+
+
 # ---------------------------------------------------------------------------
 # Override global conftest DB fixture — Visual Verification tests are DB-free
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def setup_and_cleanup_db():
+    global_duplicate_registry._sha256_index.clear()
+    global_duplicate_registry._dhash_index.clear()
     yield
+    global_duplicate_registry._sha256_index.clear()
+    global_duplicate_registry._dhash_index.clear()
 
 
 # ---------------------------------------------------------------------------
