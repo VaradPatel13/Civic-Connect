@@ -251,7 +251,7 @@ class AIPipelineService:
             reason=" | ".join(decision_reasons) if decision_reasons else verification_decision,
         )
 
-        # 7. Persist AI fields on the report model (written once after processing)
+        # 9. Persist AI fields on the report model (written once after processing)
         safety_out = get_agent_output(final_state, "safety")
         visual_out = get_agent_output(final_state, "visual_verification")
         geo_out = get_agent_output(final_state, "geo_validation")
@@ -275,31 +275,81 @@ class AIPipelineService:
         self.session.add(report)
         await self.session.commit()
 
-        # 8. Record Phase-1 audit execution (workflow_run_id passed as workflow_id for now)
-        # NOTE: audit schema gap — workflow_run_id stored in workflow_id column.
-        # Phase-1G will formalize this with a dedicated workflow_run_id column.
-        with contextlib.suppress(Exception):
-            audit_exec = await self.agent_repo.start_execution(
+        # 10. Record Phase-1 node-level and run-level audit executions
+        from backend.agents.audit_tracer import (
+            build_audit_safe_input_snapshot,
+            build_audit_safe_output_snapshot,
+        )
+
+        # Per-node executions (best effort telemetry)
+        node_names = ("supervisor", "safety", "visual_verification", "geo_validator", "issue_intelligence", "quality_gate")
+        for node_name in node_names:
+            node_out = agent_outputs.get(node_name) or {}
+            trace = node_out.get("trace") or {}
+            provider = trace.get("provider", "INTERNAL" if node_name == "supervisor" else ("DETERMINISTIC_POLICY" if node_name == "quality_gate" else "NVIDIA_NIM"))
+            model = trace.get("model", "unknown")
+            exec_status = AgentStatus.FAILED if trace.get("execution_status") == "FAILED" or node_out.get("analysis_status") == "UNAVAILABLE" else AgentStatus.COMPLETED
+
+            with contextlib.suppress(Exception):
+                inp_snap = build_audit_safe_input_snapshot(node_name, initial_state.get("raw_payload"), initial_state.get("sanitised_text"))
+                out_snap = build_audit_safe_output_snapshot(node_name, node_out, provider=provider, model=model)
+                err_snap = (
+                    {
+                        "error_code": trace.get("error_code"),
+                        "error_type": trace.get("error_type"),
+                        "error_message": trace.get("error_message"),
+                    }
+                    if trace.get("error_code")
+                    else None
+                )
+
+                exec_rec = await self.agent_repo.start_execution(
+                    report_id=report_id,
+                    workflow_id=workflow_run_id,
+                    agent_name=node_name,
+                    model_used=model,
+                    input_snapshot=inp_snap,
+                )
+                conf_val = trace.get("confidence")
+                await self.agent_repo.complete_execution(
+                    execution_id=exec_rec.id,
+                    status=exec_status,
+                    confidence=float(conf_val) if conf_val is not None else None,
+                    output_snapshot=out_snap,
+                    error_snapshot=err_snap,
+                    execution_ms=trace.get("duration_ms"),
+                )
+
+        # Critical workflow run-level audit record
+        try:
+            run_exec = await self.agent_repo.start_execution(
                 report_id=report_id,
                 workflow_id=workflow_run_id,
-                agent_name="phase1_quality_gate",
-                model_used="deterministic_policy_engine",
-                input_snapshot={
-                    "class_confidence": issue_out.get("confidence"),
-                    "geo_matched": geo_out.get("boundary_matched"),
-                    "safety_clean": safety_out.get("clean"),
-                    "visual_supports": visual_out.get("supports_report"),
-                },
+                agent_name="workflow_run",
+                model_used="phase1_report_verification_engine",
+                input_snapshot=build_audit_safe_input_snapshot("workflow_run", initial_state.get("raw_payload"), initial_state.get("sanitised_text")),
             )
             await self.agent_repo.complete_execution(
-                execution_id=audit_exec.id,
+                execution_id=run_exec.id,
                 status=AgentStatus.COMPLETED,
                 confidence=float(trust_score) if trust_score is not None else None,
                 output_snapshot={
+                    "pipeline_status": pipeline_status,
                     "verification_decision": verification_decision,
-                    "decision_reasons": decision_reasons,
+                    "policy_version": quality_gate_out.get("policy_version", "1F-2026.1"),
+                    "reason_codes": quality_gate_out.get("reason_codes", []),
+                    "policy_score": quality_gate_out.get("policy_score"),
                     "trust_score": trust_score,
+                    "requires_manual_review": quality_gate_out.get("requires_manual_review"),
                 },
+            )
+        except Exception as audit_err:
+            logger.error(f"[AIPipelineService] Critical audit persistence failed for report={report_id}: {audit_err}")
+            return await self._handle_pipeline_failure(
+                report_id=report_id,
+                workflow_run_id=workflow_run_id,
+                reason="Critical audit record persistence failed",
+                error=audit_err,
             )
 
         logger.info(

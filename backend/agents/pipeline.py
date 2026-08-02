@@ -52,19 +52,21 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from backend.agents.audit_tracer import create_node_trace_metadata
 from backend.agents.classifier import ClassificationAgent
 from backend.agents.forensics import ForensicsAgent
-from backend.core.pii_masker import mask_pii
 from backend.agents.geo_validator import GeoValidationAgent
 from backend.agents.moderator import ModerationAgent
 from backend.agents.quality_gate import evaluate_quality_gate
 from backend.agents.state import PipelineSharedState, get_agent_output
 from backend.core.ai_engine import BaseAIEngine, UnifiedAIEngine
 from backend.core.config import settings
+from backend.core.pii_masker import mask_pii
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +108,9 @@ def supervisor_node(state: PipelineSharedState) -> dict[str, Any]:
     Idempotency: If state already contains a workflow_run_id (e.g., resumed
     execution), the existing value is preserved rather than regenerated.
     """
+    start_mono = time.monotonic()
+    started_at_utc = datetime.now(UTC)
+
     report_id = state.get("report_id") or str(uuid.uuid4())
     trace_id = state.get("trace_id") or str(uuid.uuid4())
 
@@ -117,6 +122,22 @@ def supervisor_node(state: PipelineSharedState) -> dict[str, Any]:
     # Prepare AI-safe text representation (original raw_payload is never mutated)
     raw_text_val = raw_payload.get("description") or state.get("sanitised_text") or ""
     sanitised_text, _ = mask_pii(str(raw_text_val).strip())
+
+    end_mono = time.monotonic()
+    ended_at_utc = datetime.now(UTC)
+
+    trace = create_node_trace_metadata(
+        node_name="supervisor",
+        workflow_run_id=workflow_run_id,
+        report_id=report_id,
+        start_mono=start_mono,
+        end_mono=end_mono,
+        started_at_utc=started_at_utc,
+        ended_at_utc=ended_at_utc,
+        output_dict={"status": "INITIALIZED", "analysis_status": "SUCCESS"},
+        provider="INTERNAL",
+        model="supervisor_orchestrator",
+    )
 
     logger.info(
         f"[Supervisor] Initializing Phase-1 verification for report={report_id} "
@@ -136,6 +157,7 @@ def supervisor_node(state: PipelineSharedState) -> dict[str, Any]:
                 "timestamp": time.time(),
                 "report_id": report_id,
                 "workflow_run_id": workflow_run_id,
+                "trace": trace,
             }
         },
     }
@@ -143,39 +165,69 @@ def supervisor_node(state: PipelineSharedState) -> dict[str, Any]:
 
 # ── Safety & Abuse Verification Adapter ─────────────────────────────────────
 def make_safety_node(agent: ModerationAgent) -> Any:
-    """Returns a Safety & Abuse Verification node wrapping the legacy ModerationAgent.
-
-    The legacy ModerationAgent writes to agent_outputs["moderation"].
-    This adapter also writes a copy to agent_outputs["safety"] for Phase-1
-    compatibility, preserving backward-compatible "moderation" key.
-
-    Fail-safe: if the underlying agent fails, returns a conservative result that
-    marks the output as missing so the Quality Gate prerequisite check fires.
-    """
+    """Returns a Safety & Abuse Verification node wrapping ModerationAgent."""
     async def safety_node(state: PipelineSharedState) -> dict[str, Any]:
+        start_mono = time.monotonic()
+        started_at_utc = datetime.now(UTC)
+        workflow_run_id = state.get("workflow_run_id", "unknown")
+        report_id = state.get("report_id", "unknown")
+        agent_err: Exception | None = None
+
         try:
             result = await agent.process(state)
             moderation_out = (result.get("agent_outputs") or {}).get("moderation") or {}
             if not moderation_out:
                 raise ValueError("ModerationAgent returned empty output")
         except Exception as err:
+            end_mono = time.monotonic()
+            ended_at_utc = datetime.now(UTC)
+            agent_err = err
             logger.error(f"[SafetyNode] Agent failed: {err}. Returning missing-output marker.")
-            # Return marker dict with sentinel so Quality Gate prerequisite detects missing result.
+            trace = create_node_trace_metadata(
+                node_name="safety",
+                workflow_run_id=workflow_run_id,
+                report_id=report_id,
+                start_mono=start_mono,
+                end_mono=end_mono,
+                started_at_utc=started_at_utc,
+                ended_at_utc=ended_at_utc,
+                output_dict={"analysis_status": "UNAVAILABLE"},
+                provider="NVIDIA_NIM",
+                model=settings.nim_model_moderator or settings.ai_model or "llama-3.1-70b-instruct",
+                error=agent_err,
+            )
             return {
                 "agent_outputs": {
-                    "moderation": {},
-                    # "safety" key intentionally omitted so Quality Gate prerequisite fails.
+                    "moderation": {"trace": trace},
                 }
             }
 
-        # Write under both "moderation" (legacy) and "safety" (Phase-1 canonical key)
+        end_mono = time.monotonic()
+        ended_at_utc = datetime.now(UTC)
+
         safety_out = (result.get("agent_outputs") or {}).get("safety") or {
-            "clean": moderation_out.get("clean"),        # None if missing — not defaulted
+            "clean": moderation_out.get("clean"),
             "flags": moderation_out.get("flags", []),
             "toxicity_score": moderation_out.get("toxicity_score"),
             "confidence": moderation_out.get("confidence"),
             "injection_detected": "prompt_injection" in moderation_out.get("flags", []),
+            "analysis_status": moderation_out.get("analysis_status", "SUCCESS"),
         }
+
+        trace = create_node_trace_metadata(
+            node_name="safety",
+            workflow_run_id=workflow_run_id,
+            report_id=report_id,
+            start_mono=start_mono,
+            end_mono=end_mono,
+            started_at_utc=started_at_utc,
+            ended_at_utc=ended_at_utc,
+            output_dict=safety_out,
+            provider="NVIDIA_NIM",
+            model=settings.nim_model_moderator or settings.ai_model or "llama-3.1-70b-instruct",
+        )
+        safety_out["trace"] = trace
+        moderation_out["trace"] = trace
 
         return {
             "agent_outputs": {
@@ -188,26 +240,14 @@ def make_safety_node(agent: ModerationAgent) -> Any:
 
 # ── Visual Evidence Verification Adapter ────────────────────────────────────
 def make_visual_verification_node(agent: ForensicsAgent) -> Any:
-    """Returns a Visual Evidence Verification node wrapping the legacy ForensicsAgent.
-
-    The legacy ForensicsAgent writes to agent_outputs["forensics"].
-    This adapter also writes a Phase-1 evidence-signal contract under
-    agent_outputs["visual_verification"], preserving backward-compatible
-    "forensics" key.
-
-    IMPORTANT: Phase-1 Visual Verification does NOT assert "authentic": true.
-    It produces evidence signals: supports_report, evidence_confidence,
-    signals dict, and risk_flags. The Quality Gate makes the final trust decision.
-
-    EXIF signals (Phase-1A temporary behavior):
-    - exif_present, exif_gps_present, gps_consistent are set to None (UNKNOWN)
-      because the legacy ForensicsAgent does not provide reliable EXIF data.
-    - capture_source != EXIF, capture_distance_km != EXIF GPS.
-    - Phase-1C will implement real dual-layer EXIF + VLM signal extraction.
-    - None = UNKNOWN / NOT YET ESTABLISHED. Not negative. Not positive.
-    - Quality Gate must not reject on unknown EXIF signals.
-    """
+    """Returns a Visual Evidence Verification node wrapping ForensicsAgent."""
     async def visual_verification_node(state: PipelineSharedState) -> dict[str, Any]:
+        start_mono = time.monotonic()
+        started_at_utc = datetime.now(UTC)
+        workflow_run_id = state.get("workflow_run_id", "unknown")
+        report_id = state.get("report_id", "unknown")
+        agent_err: Exception | None = None
+
         try:
             result = await agent.process(state)
             agent_outs = result.get("agent_outputs") or {}
@@ -217,16 +257,33 @@ def make_visual_verification_node(agent: ForensicsAgent) -> Any:
             if not visual_verification_out and not forensics_out:
                 raise ValueError("ForensicsAgent returned empty output")
         except Exception as err:
+            end_mono = time.monotonic()
+            ended_at_utc = datetime.now(UTC)
+            agent_err = err
             logger.error(f"[VisualNode] Agent failed: {err}. Returning missing-output marker.")
+            trace = create_node_trace_metadata(
+                node_name="visual_verification",
+                workflow_run_id=workflow_run_id,
+                report_id=report_id,
+                start_mono=start_mono,
+                end_mono=end_mono,
+                started_at_utc=started_at_utc,
+                ended_at_utc=ended_at_utc,
+                output_dict={"analysis_status": "UNAVAILABLE"},
+                provider="NVIDIA_NIM",
+                model=settings.nim_model_forensics or settings.ai_model or "neva-22b",
+                error=agent_err,
+            )
             return {
                 "agent_outputs": {
-                    "forensics": {},
-                    # "visual_verification" key intentionally omitted.
+                    "forensics": {"trace": trace},
                 }
             }
 
+        end_mono = time.monotonic()
+        ended_at_utc = datetime.now(UTC)
+
         if not visual_verification_out:
-            # Fallback adapter if legacy agent didn't return visual_verification key
             source_type = forensics_out.get("source_type", "unknown")
             risk_flags: list[str] = []
 
@@ -242,11 +299,11 @@ def make_visual_verification_node(agent: ForensicsAgent) -> Any:
                 risk_flags.append("photo_of_screen_suspected")
 
             visual_verification_out = {
-                "supports_report": forensics_out.get("supports_report"),  # None if missing
+                "supports_report": forensics_out.get("supports_report"),
                 "evidence_confidence": (
                     float(forensics_out["confidence"])
                     if "confidence" in forensics_out
-                    else None           # None = unknown
+                    else None
                 ),
                 "analysis_status": "SUCCESS",
                 "signals": {
@@ -264,10 +321,25 @@ def make_visual_verification_node(agent: ForensicsAgent) -> Any:
                 "details": {},
             }
 
+        trace = create_node_trace_metadata(
+            node_name="visual_verification",
+            workflow_run_id=workflow_run_id,
+            report_id=report_id,
+            start_mono=start_mono,
+            end_mono=end_mono,
+            started_at_utc=started_at_utc,
+            ended_at_utc=ended_at_utc,
+            output_dict=visual_verification_out,
+            provider="NVIDIA_NIM",
+            model=settings.nim_model_forensics or settings.ai_model or "neva-22b",
+        )
+        visual_verification_out["trace"] = trace
+        forensics_out["trace"] = trace
+
         return {
             "agent_outputs": {
-                "forensics": forensics_out,                        # Legacy key
-                "visual_verification": visual_verification_out,    # Phase-1 canonical
+                "forensics": forensics_out,
+                "visual_verification": visual_verification_out,
             }
         }
     return visual_verification_node
@@ -275,36 +347,104 @@ def make_visual_verification_node(agent: ForensicsAgent) -> Any:
 
 # ── Geo Verification Adapter ─────────────────────────────────────────────────
 def make_geo_node(agent: GeoValidationAgent) -> Any:
-    """Returns a Geo Verification node wrapping the legacy GeoValidationAgent.
-
-    The legacy agent already writes to agent_outputs["geo_validation"] which
-    is the Phase-1 canonical key — no renaming needed.
-    """
+    """Returns a Geo Verification node wrapping GeoValidationAgent."""
     async def geo_node(state: PipelineSharedState) -> dict[str, Any]:
+        start_mono = time.monotonic()
+        started_at_utc = datetime.now(UTC)
+        workflow_run_id = state.get("workflow_run_id", "unknown")
+        report_id = state.get("report_id", "unknown")
+
         try:
-            return await agent.process(state)
+            res = await agent.process(state)
+            end_mono = time.monotonic()
+            ended_at_utc = datetime.now(UTC)
+            geo_out = (res.get("agent_outputs") or {}).get("geo_validation") or {}
+            trace = create_node_trace_metadata(
+                node_name="geo_validator",
+                workflow_run_id=workflow_run_id,
+                report_id=report_id,
+                start_mono=start_mono,
+                end_mono=end_mono,
+                started_at_utc=started_at_utc,
+                ended_at_utc=ended_at_utc,
+                output_dict=geo_out,
+                provider="POSTGIS / DETERMINISTIC",
+                model="postgis_spatial_engine",
+            )
+            if geo_out:
+                geo_out["trace"] = trace
+            return res
         except Exception as err:
+            end_mono = time.monotonic()
+            ended_at_utc = datetime.now(UTC)
             logger.error(f"[GeoNode] Agent failed: {err}. Returning missing-output marker.")
-            return {"agent_outputs": {}}  # No "geo_validation" key → prerequisite fails
+            trace = create_node_trace_metadata(
+                node_name="geo_validator",
+                workflow_run_id=workflow_run_id,
+                report_id=report_id,
+                start_mono=start_mono,
+                end_mono=end_mono,
+                started_at_utc=started_at_utc,
+                ended_at_utc=ended_at_utc,
+                output_dict={"analysis_status": "UNAVAILABLE"},
+                provider="POSTGIS / DETERMINISTIC",
+                model="postgis_spatial_engine",
+                error=err,
+            )
+            return {"agent_outputs": {"geo_validation": {"trace": trace}}}
     return geo_node
 
 
 # ── Issue Intelligence Adapter ────────────────────────────────────────────────
 def make_issue_intelligence_node(agent: ClassificationAgent) -> Any:
-    """Returns an Issue Intelligence node executing ClassificationAgent.
-
-    Emits Phase-1 canonical agent_outputs["issue_intelligence"] alongside
-    backward-compatible agent_outputs["classification"].
-    """
+    """Returns an Issue Intelligence node executing ClassificationAgent."""
     async def issue_intelligence_node(state: PipelineSharedState) -> dict[str, Any]:
+        start_mono = time.monotonic()
+        started_at_utc = datetime.now(UTC)
+        workflow_run_id = state.get("workflow_run_id", "unknown")
+        report_id = state.get("report_id", "unknown")
+
         try:
-            return await agent.process(state)
+            res = await agent.process(state)
+            end_mono = time.monotonic()
+            ended_at_utc = datetime.now(UTC)
+            issue_out = (res.get("agent_outputs") or {}).get("issue_intelligence") or {}
+            trace = create_node_trace_metadata(
+                node_name="issue_intelligence",
+                workflow_run_id=workflow_run_id,
+                report_id=report_id,
+                start_mono=start_mono,
+                end_mono=end_mono,
+                started_at_utc=started_at_utc,
+                ended_at_utc=ended_at_utc,
+                output_dict=issue_out,
+                provider="NVIDIA_NIM",
+                model=settings.nim_model_classifier or settings.ai_model or "llama-3.1-70b-instruct",
+            )
+            if issue_out:
+                issue_out["trace"] = trace
+            return res
         except Exception as err:
+            end_mono = time.monotonic()
+            ended_at_utc = datetime.now(UTC)
             logger.error(f"[IssueNode] Agent failed: {err}. Returning missing-output marker.")
+            trace = create_node_trace_metadata(
+                node_name="issue_intelligence",
+                workflow_run_id=workflow_run_id,
+                report_id=report_id,
+                start_mono=start_mono,
+                end_mono=end_mono,
+                started_at_utc=started_at_utc,
+                ended_at_utc=ended_at_utc,
+                output_dict={"analysis_status": "UNAVAILABLE"},
+                provider="NVIDIA_NIM",
+                model=settings.nim_model_classifier or settings.ai_model or "llama-3.1-70b-instruct",
+                error=err,
+            )
             return {
                 "agent_outputs": {
                     "classification": {},
-                    # "issue_intelligence" intentionally omitted on exception → fails prerequisite check
+                    "issue_intelligence": {"trace": trace},
                 }
             }
     return issue_intelligence_node
@@ -312,13 +452,7 @@ def make_issue_intelligence_node(agent: ClassificationAgent) -> Any:
 
 # ── Quality Gate Prerequisite Validation ────────────────────────────────────
 def _validate_prerequisites(state: PipelineSharedState) -> list[str]:
-    """Validates presence of all required verification outputs.
-
-    Returns a list of missing-output reason strings.
-    Empty list means all prerequisites are present.
-
-    INVARIANT: missing output must NEVER silently become VERIFIED.
-    """
+    """Validates presence of all required verification outputs."""
     agent_outputs = state.get("agent_outputs") or {}
     missing: list[str] = []
     for key in REQUIRED_VERIFICATION_OUTPUTS:
@@ -332,18 +466,33 @@ def _validate_prerequisites(state: PipelineSharedState) -> list[str]:
 def quality_gate_node(state: PipelineSharedState) -> dict[str, Any]:
     """Trust / Quality Gate — the ONLY Phase-1 component authorized to set
     verification_decision.
-
-    Delegates evaluation to the deterministic pure Quality Gate Policy Engine
-    (evaluate_quality_gate) while preserving StateGraph reducer contracts.
     """
-    report_id = state.get("report_id", "unknown")
+    start_mono = time.monotonic()
+    started_at_utc = datetime.now(UTC)
 
-    # Read evidence dictionary from shared state
+    report_id = state.get("report_id", "unknown")
+    workflow_run_id = state.get("workflow_run_id", "unknown")
     agent_outputs = state.get("agent_outputs", {})
 
-    # Evaluate deterministic quality gate policy
     qg_result = evaluate_quality_gate(agent_outputs, report_id=report_id)
     decision = qg_result["verification_decision"]
+
+    end_mono = time.monotonic()
+    ended_at_utc = datetime.now(UTC)
+
+    trace = create_node_trace_metadata(
+        node_name="quality_gate",
+        workflow_run_id=workflow_run_id,
+        report_id=report_id,
+        start_mono=start_mono,
+        end_mono=end_mono,
+        started_at_utc=started_at_utc,
+        ended_at_utc=ended_at_utc,
+        output_dict=qg_result,
+        provider="DETERMINISTIC_POLICY",
+        model="quality_gate_policy_engine",
+    )
+    qg_result["trace"] = trace
 
     return {
         "verification_decision": decision,
