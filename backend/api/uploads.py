@@ -1,17 +1,16 @@
-"""
-Signed upload URL generation for direct Cloudinary uploads.
-
-Instead of proxying file bytes through the API server, the mobile client
-requests a signed upload preset and uploads directly to Cloudinary.
-"""
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
+import hashlib
+import hmac
 import logging
+import secrets
 from typing import Annotated
+import uuid
 
 from cloudinary.exceptions import Error as CloudinaryError
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from backend.api.deps import get_current_user
@@ -23,34 +22,127 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
 
+# ── In-Memory Capture Challenge Registry (5-minute TTL) ─────────────────────────
+
+_ACTIVE_CHALLENGES: dict[str, dict] = {}
+
+
+def _clean_expired_challenges() -> None:
+    """Evict expired capture challenges."""
+    now = datetime.now(UTC)
+    expired = [cid for cid, ch in _ACTIVE_CHALLENGES.items() if ch["expires_at"] < now]
+    for cid in expired:
+        _ACTIVE_CHALLENGES.pop(cid, None)
+
+
+def _get_signing_secret() -> str:
+    """Helper to retrieve primary server secret for HMAC signing."""
+    sec = getattr(settings, "jwt_secret_key", None) or getattr(settings, "jwt_secret", None)
+    if isinstance(sec, str) and sec.strip():
+        return sec.strip()
+    return "civicconnect_secret_key"
+
 
 # ── Request / Response models ─────────────────────────────────────────────────
 
-class UploadResponse(BaseModel):
-    """Cloudinary asset details returned after a successful upload."""
+class ChallengeResponse(BaseModel):
+    """Short-lived server-issued capture challenge token."""
 
-    url:        str
-    secure_url: str
-    public_id:  str
-    format:     str
-    width:      int | None = None
-    height:     int | None = None
-    bytes:      int = 0
+    challenge_id: str
+    nonce:        str
+    issued_at:    str
+    expires_at:   str
+    signed_token: str
+
+
+class UploadResponse(BaseModel):
+    """Cloudinary asset details + server signed provenance returned after upload."""
+
+    url:            str
+    secure_url:     str
+    public_id:      str
+    format:         str
+    width:          int | None = None
+    height:         int | None = None
+    bytes:          int = 0
+    sha256_hash:    str | None = None
+    hmac_signature: str | None = None
+    capture_source: str = "gallery"
+    challenge_id:   str | None = None
 
     @classmethod
-    def from_result(cls, r: UploadResult) -> UploadResponse:
+    def from_result(
+        cls,
+        r: UploadResult,
+        sha256_hash: str | None = None,
+        hmac_signature: str | None = None,
+        capture_source: str = "gallery",
+        challenge_id: str | None = None,
+    ) -> UploadResponse:
         return cls(
-            url        = r.url,
-            secure_url = r.secure_url,
-            public_id  = r.public_id,
-            format     = r.format,
-            width      = r.width,
-            height     = r.height,
-            bytes      = r.bytes,
+            url            = r.url,
+            secure_url     = r.secure_url,
+            public_id      = r.public_id,
+            format         = r.format,
+            width          = r.width,
+            height         = r.height,
+            bytes          = r.bytes,
+            sha256_hash    = sha256_hash,
+            hmac_signature = hmac_signature,
+            capture_source = capture_source,
+            challenge_id   = challenge_id,
         )
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/challenge",
+    response_model=ChallengeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Issue camera capture challenge",
+    description="Issue a short-lived (5-min) server capture challenge token prior to camera capture.",
+)
+@router.get(
+    "/challenge",
+    response_model=ChallengeResponse,
+    summary="Issue camera capture challenge",
+)
+async def create_capture_challenge(
+    current_user: Citizen = Depends(get_current_user),
+) -> ChallengeResponse:
+    """Generate a short-lived capture challenge bound to current authenticated user."""
+    _clean_expired_challenges()
+
+    challenge_id = f"chl_{uuid.uuid4().hex}"
+    nonce = secrets.token_hex(16)
+    issued_at = datetime.now(UTC)
+    expires_at = issued_at + timedelta(minutes=5)
+
+    secret = _get_signing_secret()
+    payload = f"{challenge_id}:{nonce}:{current_user.id}:{expires_at.isoformat()}"
+    signed_token = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    _ACTIVE_CHALLENGES[challenge_id] = {
+        "challenge_id": challenge_id,
+        "nonce": nonce,
+        "citizen_id": str(current_user.id),
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "signed_token": signed_token,
+        "consumed": False,
+    }
+
+    logger.info(f"[CaptureChallenge] Issued {challenge_id} for user {current_user.id}")
+
+    return ChallengeResponse(
+        challenge_id=challenge_id,
+        nonce=nonce,
+        issued_at=issued_at.isoformat(),
+        expires_at=expires_at.isoformat(),
+        signed_token=signed_token,
+    )
+
 
 @router.post(
     "",
@@ -63,19 +155,20 @@ class UploadResponse(BaseModel):
     response_model=UploadResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload a media asset",
-    description="Upload an image directly to Cloudinary. Accepted formats: JPEG, PNG, WebP, HEIC.",
+    description="Upload an image directly to Cloudinary. Accepts optional capture challenge for camera provenance signing.",
 )
 async def upload_asset(
     file: Annotated[UploadFile, File(description="Image file (max 10 MB)")],
+    challenge_id: Annotated[str | None, Form(description="Server capture challenge ID")] = None,
+    signed_token: Annotated[str | None, Form(description="Capture challenge token signature")] = None,
+    x_challenge_id: Annotated[str | None, Header(alias="X-Capture-Challenge-Id")] = None,
+    x_challenge_token: Annotated[str | None, Header(alias="X-Capture-Challenge-Token")] = None,
     current_user: Citizen = Depends(get_current_user),
 ) -> UploadResponse:
+    """Receive a file from the mobile client, validate provenance challenge, sign SHA-256, and upload to Cloudinary."""
+    eff_challenge_id = challenge_id or x_challenge_id
+    eff_challenge_token = signed_token or x_challenge_token
 
-    """
-    Receive a file from the mobile client and upload it to Cloudinary.
-
-    For large files prefer the presigned URL flow (TODO: future enhancement),
-    which streams bytes directly to Cloudinary without hitting this server.
-    """
     # ── Validate content type ─────────────────────────────────────────────────
     ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
     if file.content_type not in ALLOWED_TYPES:
@@ -98,6 +191,31 @@ async def upload_asset(
             detail="Empty file uploaded.",
         )
 
+    # ── Compute SHA-256 of original file bytes ─────────────────────────────
+    sha256_hash = hashlib.sha256(content).hexdigest()
+
+    # ── Validate Server-Issued Capture Challenge ──────────────────────────────
+    hmac_signature: str | None = None
+    capture_source = "gallery"
+    secret = _get_signing_secret()
+
+    if eff_challenge_id:
+        _clean_expired_challenges()
+        ch = _ACTIVE_CHALLENGES.get(eff_challenge_id)
+        if not ch:
+            logger.warning(f"[Uploads] Invalid or expired capture challenge {eff_challenge_id}")
+        elif ch["citizen_id"] != str(current_user.id):
+            logger.warning(f"[Uploads] Challenge {eff_challenge_id} citizen mismatch")
+        elif ch["expires_at"] < datetime.now(UTC):
+            logger.warning(f"[Uploads] Challenge {eff_challenge_id} expired")
+        else:
+            # Valid challenge: consume and generate server cryptographic signature
+            ch["consumed"] = True
+            capture_source = "camera"
+            # Server-signed HMAC over image SHA-256 digest
+            hmac_signature = hmac.new(secret.encode("utf-8"), sha256_hash.encode("utf-8"), hashlib.sha256).hexdigest()
+            logger.info(f"[Uploads] Sealed server provenance signature for challenge {eff_challenge_id} (hash={sha256_hash[:8]}...)")
+
     # ── Upload to Cloudinary ───────────────────────────────────────────────────
     if not settings.cloudinary_url:
         raise HTTPException(
@@ -108,7 +226,13 @@ async def upload_asset(
     try:
         filename = file.filename or "upload"
         result = await asyncio.to_thread(upload_file, content, filename)
-        return UploadResponse.from_result(result)
+        return UploadResponse.from_result(
+            result,
+            sha256_hash=sha256_hash,
+            hmac_signature=hmac_signature,
+            capture_source=capture_source,
+            challenge_id=eff_challenge_id,
+        )
 
     except RuntimeError as e:
         logger.warning("Upload service not configured: %s", e)
@@ -128,4 +252,5 @@ async def upload_asset(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Upload failed.",
         ) from e
+
 

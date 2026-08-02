@@ -32,6 +32,9 @@ from backend.agents.quality_gate import (
     REASON_QG_SAFETY_BLOCK,
     REASON_QG_SAFETY_UNAVAILABLE,
     REASON_QG_VERIFICATION_POLICY_SATISFIED,
+    REASON_QG_VISUAL_CONFIRMED_UNRELATED,
+    REASON_QG_INVALID_PHOTO_OF_SCREEN,
+    REASON_QG_INVALID_SCREENSHOT_EVIDENCE,
     REASON_QG_VISUAL_CONTRADICTION,
     REASON_QG_VISUAL_LOW_CONFIDENCE,
     REASON_QG_VISUAL_RISK,
@@ -476,4 +479,161 @@ async def test_approximate_geo_provisional_verified():
 
     res = evaluate_quality_gate(evidence)
     assert res["verification_decision"] == DECISION_VERIFIED
+
+
+# ── PART 13 HIGH-CONFIDENCE INVALID EVIDENCE & PROVENANCE TESTS ─────────────
+
+
+@pytest.mark.asyncio
+async def test_visual_confirmed_unrelated_rejects():
+    """1. High-confidence unrelated visual evidence (supports=False, issue_vis=False, cat_match=False, conf>=0.85) => REJECTED."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["supports_report"] = False
+    evidence["visual_verification"]["evidence_confidence"] = 0.96
+    evidence["visual_verification"]["signals"] = {
+        "reported_issue_visible": False,
+        "issue_category_match": False,
+    }
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_REJECTED
+    assert REASON_QG_VISUAL_CONFIRMED_UNRELATED in res["reason_codes"]
+
+
+@pytest.mark.asyncio
+async def test_photo_of_screen_low_confidence_manual_review():
+    """2. photo_of_screen_suspected=True but low confidence (0.55) => PENDING_MANUAL_REVIEW."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["supports_report"] = False
+    evidence["visual_verification"]["evidence_confidence"] = 0.55
+    evidence["visual_verification"]["risk_flags"] = ["photo_of_screen_suspected"]
+    evidence["visual_verification"]["signals"] = {"photo_of_screen_suspected": True}
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_PENDING_MANUAL_REVIEW
+    assert REASON_QG_VISUAL_RISK in res["reason_codes"]
+
+
+@pytest.mark.asyncio
+async def test_photo_of_screen_high_confidence_rejects():
+    """3. Confirmed PHOTO_OF_SCREEN (high conf 0.90, supports=False) => REJECTED."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["supports_report"] = False
+    evidence["visual_verification"]["evidence_confidence"] = 0.90
+    evidence["visual_verification"]["risk_flags"] = ["photo_of_screen_suspected"]
+    evidence["visual_verification"]["signals"] = {
+        "source_type": "photo_of_screen",
+        "photo_of_screen_suspected": True,
+    }
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_REJECTED
+    assert REASON_QG_INVALID_PHOTO_OF_SCREEN in res["reason_codes"]
+
+
+@pytest.mark.asyncio
+async def test_screenshot_suspected_low_confidence_manual_review():
+    """4. screenshot suspected only (conf 0.50) => PENDING_MANUAL_REVIEW."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["supports_report"] = True
+    evidence["visual_verification"]["evidence_confidence"] = 0.50
+    evidence["visual_verification"]["risk_flags"] = ["screenshot_suspected"]
+    evidence["visual_verification"]["signals"] = {"screenshot_suspected": True}
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_PENDING_MANUAL_REVIEW
+
+
+@pytest.mark.asyncio
+async def test_screenshot_high_confidence_unsupported_rejects():
+    """5. High-confidence screenshot used as physical evidence (supports=False, conf 0.90) => REJECTED."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["supports_report"] = False
+    evidence["visual_verification"]["evidence_confidence"] = 0.90
+    evidence["visual_verification"]["risk_flags"] = ["screenshot_suspected"]
+    evidence["visual_verification"]["signals"] = {
+        "source_type": "screenshot",
+        "screenshot_suspected": True,
+    }
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_REJECTED
+    assert REASON_QG_INVALID_SCREENSHOT_EVIDENCE in res["reason_codes"]
+
+
+@pytest.mark.asyncio
+async def test_visual_provider_unavailable_manual_review():
+    """6. Visual provider unavailable => PENDING_MANUAL_REVIEW."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["analysis_status"] = "UNAVAILABLE"
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_PENDING_MANUAL_REVIEW
+    assert REASON_QG_VISUAL_UNAVAILABLE in res["reason_codes"]
+
+
+@pytest.mark.asyncio
+async def test_missing_exif_only_does_not_reject():
+    """7. Missing EXIF only MUST NOT cause REJECTED decision."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["signals"]["exif_present"] = False
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] != DECISION_REJECTED
+
+
+@pytest.mark.asyncio
+async def test_missing_hmac_only_does_not_reject():
+    """8. Missing HMAC only MUST NOT cause REJECTED decision."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["signals"]["signature_valid"] = None
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] != DECISION_REJECTED
+
+
+@pytest.mark.asyncio
+async def test_invalid_hmac_manual_review():
+    """9. Invalid HMAC (signature_valid=False) => PENDING_MANUAL_REVIEW with QG_INVALID_SIGNATURE."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["signals"]["signature_valid"] = False
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_PENDING_MANUAL_REVIEW
+    assert REASON_QG_INVALID_SIGNATURE in res["reason_codes"]
+
+
+@pytest.mark.asyncio
+async def test_valid_app_provenance_plus_valid_civic_image():
+    """10. Valid app provenance + valid civic image => VERIFIED (not penalized)."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["signals"]["signature_valid"] = True
+    evidence["visual_verification"]["supports_report"] = True
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_VERIFIED
+
+
+@pytest.mark.asyncio
+async def test_valid_app_provenance_does_not_override_visual_contradiction():
+    """11. Valid app provenance DOES NOT override high-confidence visual contradiction => REJECTED."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["signals"]["signature_valid"] = True
+    evidence["visual_verification"]["supports_report"] = False
+    evidence["visual_verification"]["evidence_confidence"] = 0.90
+    evidence["visual_verification"]["signals"] = {
+        "signature_valid": True,
+        "reported_issue_visible": False,
+        "issue_category_match": False,
+    }
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_REJECTED
+    assert REASON_QG_VISUAL_CONFIRMED_UNRELATED in res["reason_codes"]
+
+
+@pytest.mark.asyncio
+async def test_high_confidence_unrelated_image_with_valid_hmac_still_rejects():
+    """12. High-confidence unrelated image with valid HMAC signature => still REJECTED."""
+    evidence = _make_golden_evidence()
+    evidence["visual_verification"]["supports_report"] = False
+    evidence["visual_verification"]["evidence_confidence"] = 0.95
+    evidence["visual_verification"]["signals"] = {
+        "signature_valid": True,
+        "source_type": "photo_of_screen",
+        "photo_of_screen_suspected": True,
+    }
+    res = evaluate_quality_gate(evidence)
+    assert res["verification_decision"] == DECISION_REJECTED
+    assert REASON_QG_INVALID_PHOTO_OF_SCREEN in res["reason_codes"]
+
 

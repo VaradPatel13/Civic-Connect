@@ -26,14 +26,27 @@ export const ISSUE_CATEGORY_MAP = Object.fromEntries(
   ISSUE_CATEGORY_SLUGS.map(c => [c.slug, c]),
 ) as Record<IssueCategorySlug, typeof ISSUE_CATEGORY_SLUGS[number]>;
 
+// ── Capture Challenge issued by POST /api/v1/uploads/challenge ───────────────
+export interface CaptureChallenge {
+  challenge_id: string;
+  nonce:        string;
+  issued_at:    string;
+  expires_at:   string;
+  signed_token: string;
+}
+
 // ── Uploaded asset returned by POST /api/v1/uploads ─────────────────────────
 export interface UploadAsset {
-  url:        string;
-  secure_url: string;
-  public_id:  string;
-  format:     string;
-  width:      number | null;
-  height:     number | null;
+  url:            string;
+  secure_url:     string;
+  public_id:      string;
+  format:         string;
+  width:          number | null;
+  height:         number | null;
+  sha256_hash?:   string;
+  hmac_signature?: string;
+  capture_source?: 'camera' | 'gallery';
+  challenge_id?:  string;
 }
 
 // ── PhotoMetadata payload (sent to backend) ────────────────────────────────────

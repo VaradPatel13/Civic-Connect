@@ -594,31 +594,18 @@ class ForensicsAgent:
                 f"Inspect for screenshot chrome, photo of another display screen/bezel, AI generation artifacts, or photo editing."
             )
 
-            vlm_out: VisualVerificationVLMOutput | ForensicsPydanticOutput | None = None
+            vlm_out: VisualVerificationVLMOutput | None = None
             try:
-                try:
-                    parsed_vlm, exec_ms, tokens, model_name = await self.ai_engine.generate_structured(
-                        prompt=prompt,
-                        response_model=VisualVerificationVLMOutput,
-                        system_prompt=system_prompt,
-                        temperature=0.0,
-                        image_urls=[img_url],
-                    )
-                    vlm_model_name = model_name
-                    vlm_succeeded = True
-                    vlm_out = parsed_vlm
-                except Exception as schema_err:
-                    logger.debug(f"[Forensics] VisualVerificationVLMOutput schema failed ({schema_err}), fallback to ForensicsPydanticOutput.")
-                    parsed_vlm, exec_ms, tokens, model_name = await self.ai_engine.generate_structured(
-                        prompt=prompt,
-                        response_model=ForensicsPydanticOutput,
-                        system_prompt=system_prompt,
-                        temperature=0.0,
-                        image_urls=[img_url],
-                    )
-                    vlm_model_name = model_name
-                    vlm_succeeded = True
-                    vlm_out = parsed_vlm
+                parsed_vlm, exec_ms, tokens, model_name = await self.ai_engine.generate_structured(
+                    prompt=prompt,
+                    response_model=VisualVerificationVLMOutput,
+                    system_prompt=system_prompt,
+                    temperature=0.0,
+                    image_urls=[img_url],
+                )
+                vlm_model_name = model_name
+                vlm_succeeded = True
+                vlm_out = parsed_vlm
             except Exception as vlm_err:
                 logger.warning(f"[Forensics] VLM inference failed for image {idx} ({vlm_err}).")
 

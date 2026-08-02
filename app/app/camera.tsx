@@ -2,7 +2,7 @@
  * Camera Screen — CivicConnect Mobile
  * Live photo capture HUD for geo-tagged infrastructure reporting.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { api } from '@src/lib/api';
 import { getCurrentLocation } from '@src/lib/location';
-import type { UploadAsset } from '@src/types/reports';
+import type { CaptureChallenge, UploadAsset } from '@src/types/reports';
 
 export default function CameraScreen() {
   const router = useRouter();
@@ -27,6 +27,16 @@ export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>('back');
   const [uploading, setUploading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const [challenge, setChallenge] = useState<CaptureChallenge | null>(null);
+
+  useEffect(() => {
+    // Request short-lived capture challenge from backend
+    api.post<CaptureChallenge>('/api/v1/uploads/challenge', {})
+      .then((ch) => setChallenge(ch))
+      .catch(() => {
+        // Fallback: Upload will proceed as unsigned camera capture if challenge fails
+      });
+  }, []);
 
   if (!permission) {
     return (
@@ -70,18 +80,22 @@ export default function CameraScreen() {
         // Fallback GPS location
       }
 
+      const asset = await uploadToCloudinary(photo!.uri, challenge?.challenge_id, challenge?.signed_token);
+
       const photoMetadata = JSON.stringify({
-        capture_source: 'camera_hud',
+        capture_source: asset.capture_source || 'camera',
         latitude: locData.latitude ?? 18.5204,
         longitude: locData.longitude ?? 73.8567,
         gps_accuracy_m: locData.accuracy ?? 8.5,
         captured_at: new Date().toISOString(),
+        sha256_hash: asset.sha256_hash,
+        hmac_signature: asset.hmac_signature,
+        challenge_id: asset.challenge_id || challenge?.challenge_id,
         device_model: Platform.OS === 'ios' ? 'iPhone' : 'Android Mobile',
         os_version: `${Platform.OS} ${Platform.Version}`,
         app_version: '1.2.0',
       });
 
-      const asset = await uploadToCloudinary(photo!.uri);
       router.replace({
         pathname: '/create-report',
         params: { photoUri: photo!.uri, photoMetadata, ...asset },
@@ -100,13 +114,17 @@ export default function CameraScreen() {
     setFacing((current) => (current === 'back' ? 'front' : 'back'));
   }
 
-  async function uploadToCloudinary(uri: string): Promise<UploadAsset> {
+  async function uploadToCloudinary(uri: string, challengeId?: string, signedToken?: string): Promise<UploadAsset> {
     const filename = uri.split('/').pop() ?? 'inspection_scan.jpg';
+    const formParams: Record<string, string> = {};
+    if (challengeId) formParams.challenge_id = challengeId;
+    if (signedToken) formParams.signed_token = signedToken;
+
     return api.upload<UploadAsset>('/api/v1/uploads/', {
       uri,
       name: filename,
       type: 'image/jpeg',
-    });
+    }, formParams);
   }
 
   return (

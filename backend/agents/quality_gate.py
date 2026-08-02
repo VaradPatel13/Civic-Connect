@@ -56,6 +56,9 @@ REASON_QG_SAFETY_BLOCK: Final[str] = "QG_SAFETY_BLOCK"
 REASON_QG_INVALID_COORDINATES: Final[str] = "QG_INVALID_COORDINATES"
 REASON_QG_OUTSIDE_JURISDICTION: Final[str] = "QG_OUTSIDE_JURISDICTION"
 REASON_QG_NON_CIVIC: Final[str] = "QG_NON_CIVIC"
+REASON_QG_VISUAL_CONFIRMED_UNRELATED: Final[str] = "QG_VISUAL_CONFIRMED_UNRELATED"
+REASON_QG_INVALID_PHOTO_OF_SCREEN: Final[str] = "QG_INVALID_PHOTO_OF_SCREEN"
+REASON_QG_INVALID_SCREENSHOT_EVIDENCE: Final[str] = "QG_INVALID_SCREENSHOT_EVIDENCE"
 
 # Material Contradiction & Review Conditions
 REASON_QG_PROMPT_INJECTION_DETECTED: Final[str] = "QG_PROMPT_INJECTION_DETECTED"
@@ -401,6 +404,74 @@ def evaluate_quality_gate(
         reason_codes.append(REASON_QG_NON_CIVIC)
         reasons.append("Report describes a non-civic/private issue outside PMC mandate")
         logger.warning(f"[QualityGate] report={report_id} → REJECTED | Non-civic issue (conf={issue_conf:.2f})")
+        return {
+            "verification_decision": DECISION_REJECTED,
+            "policy_version": QUALITY_GATE_POLICY_VERSION,
+            "reason_codes": reason_codes,
+            "reasons": reasons,
+            "decision_reasons": reasons,
+            "evidence_summary": evidence_summary,
+            "policy_score": 0,
+            "trust_score": 0.0,
+            "requires_manual_review": False,
+        }
+
+    # 3E. Confirmed Unrelated Visual Evidence (High Confidence VLM Output)
+    v_issue_vis = visual_signals.get("reported_issue_visible")
+    v_cat_match = visual_signals.get("issue_category_match")
+    if (
+        visual_supports is False
+        and v_issue_vis is False
+        and v_cat_match is False
+        and visual_conf >= 0.85
+    ):
+        reason_codes.append(REASON_QG_VISUAL_CONFIRMED_UNRELATED)
+        reasons.append("Visual evidence confirmed unrelated: reported civic issue not visible in photo")
+        logger.warning(f"[QualityGate] report={report_id} → REJECTED | Unrelated visual evidence (conf={visual_conf:.2f})")
+        return {
+            "verification_decision": DECISION_REJECTED,
+            "policy_version": QUALITY_GATE_POLICY_VERSION,
+            "reason_codes": reason_codes,
+            "reasons": reasons,
+            "decision_reasons": reasons,
+            "evidence_summary": evidence_summary,
+            "policy_score": 0,
+            "trust_score": 0.0,
+            "requires_manual_review": False,
+        }
+
+    # 3F. Confirmed Photo-of-Screen Invalid Evidence (High Confidence + Unsupported)
+    is_pos_confirmed = (
+        visual_signals.get("source_type") == "photo_of_screen"
+        or visual_signals.get("photo_of_screen_suspected") is True
+        or "photo_of_screen_suspected" in visual_risk_flags
+    )
+    if is_pos_confirmed and visual_supports is False and visual_conf >= 0.85:
+        reason_codes.append(REASON_QG_INVALID_PHOTO_OF_SCREEN)
+        reasons.append("Submitted visual evidence confirmed as photo taken of another display screen")
+        logger.warning(f"[QualityGate] report={report_id} → REJECTED | Photo-of-screen invalid evidence (conf={visual_conf:.2f})")
+        return {
+            "verification_decision": DECISION_REJECTED,
+            "policy_version": QUALITY_GATE_POLICY_VERSION,
+            "reason_codes": reason_codes,
+            "reasons": reasons,
+            "decision_reasons": reasons,
+            "evidence_summary": evidence_summary,
+            "policy_score": 0,
+            "trust_score": 0.0,
+            "requires_manual_review": False,
+        }
+
+    # 3G. Confirmed Screenshot Invalid Evidence (High Confidence + Unsupported)
+    is_ss_confirmed = (
+        visual_signals.get("source_type") == "screenshot"
+        or visual_signals.get("screenshot_suspected") is True
+        or "screenshot_suspected" in visual_risk_flags
+    )
+    if is_ss_confirmed and visual_supports is False and visual_conf >= 0.85:
+        reason_codes.append(REASON_QG_INVALID_SCREENSHOT_EVIDENCE)
+        reasons.append("Submitted visual evidence confirmed as digital screenshot rather than live capture")
+        logger.warning(f"[QualityGate] report={report_id} → REJECTED | Screenshot invalid evidence (conf={visual_conf:.2f})")
         return {
             "verification_decision": DECISION_REJECTED,
             "policy_version": QUALITY_GATE_POLICY_VERSION,
