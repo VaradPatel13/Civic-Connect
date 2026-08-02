@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     # ── Per-Agent NVIDIA NIM Specialized Models (Configured via .env) ───
     nim_model_forensics: str = ""
     nim_model_classifier: str = ""
+    nim_model_issue_intelligence: str = ""
     nim_model_moderator: str = ""
     nim_model_enhancer: str = ""
     nim_model_router: str = ""

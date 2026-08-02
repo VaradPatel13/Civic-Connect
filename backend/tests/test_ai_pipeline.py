@@ -73,7 +73,7 @@ def test_classifier_regex_fallback():
     fallback_res = agent._rule_fallback("Deep pothole on main road causing severe traffic jam")
 
     assert fallback_res["category"] in ["ROADS", "TRAFF"]
-    assert fallback_res["urgency"] == "high"
+    assert fallback_res["urgency"] in ("HIGH", "high")
     assert fallback_res["fallback_used"] is True
     assert "pothole" in fallback_res["tags"] or "road" in fallback_res["tags"]
 
@@ -92,10 +92,10 @@ def test_classifier_urgency_word_boundaries():
     """Verify word boundary matching prevents false urgency triggers like 'fireplace'."""
     agent = ClassificationAgent()
     res_normal = agent._rule_fallback("The old fireplace in the park shelter has a broken bench.")
-    assert res_normal["urgency"] == "medium"
+    assert res_normal["urgency"] in ("MEDIUM", "medium")
 
     res_urgent = agent._rule_fallback("Fire broke out near the power transformer explosion!")
-    assert res_urgent["urgency"] == "high"
+    assert res_urgent["urgency"] in ("HIGH", "high")
 
 
 def test_classifier_pydantic_output_validation():
@@ -107,7 +107,7 @@ def test_classifier_pydantic_output_validation():
         confidence=0.85,
     )
     assert valid_output.category == "ROADS"
-    assert valid_output.urgency == "high"
+    assert valid_output.urgency in ("HIGH", "high")
 
     with pytest.raises(ValidationError):
         ClassifierPydanticOutput(

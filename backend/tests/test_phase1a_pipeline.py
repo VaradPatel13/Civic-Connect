@@ -58,8 +58,8 @@ class MockAIEngine(BaseAIEngine):
             data = {"clean": True, "flags": [], "toxicity_score": 0.01,
                     "confidence": 0.99, "requires_human_review": False,
                     "safe_for_processing": True}
-        elif "Classifier" in sys_str or "classif" in sys_str.lower():
-            data = {"category": "ROADS", "urgency": "high", "tags": ["pothole"], "confidence": 0.91}
+        elif "Classifier" in sys_str or "classif" in sys_str.lower() or "Issue Intelligence" in sys_str or "issue intelligence" in sys_str.lower():
+            data = {"civic_relevance": True, "category": "ROADS", "severity": "HIGH", "urgency": "HIGH", "tags": ["pothole"], "confidence": 0.91}
         else:
             data = {}
         return response_model.model_validate(data), 1.0, 10, "mock-model"
@@ -338,7 +338,7 @@ async def test_08_verified_reaches_end(mock_engine, base_initial_state):
 
 def test_09_rejected_reaches_end():
     state = _full_state()
-    state["agent_outputs"]["safety"] = {"clean": False, "flags": ["prompt_injection"], "confidence": 0.99}
+    state["agent_outputs"]["geo_validation"]["coordinates_valid"] = False
     result = quality_gate_node(state)
     assert result["verification_decision"] == DECISION_REJECTED
     assert result["pipeline_status"] == STATUS_COMPLETED
@@ -358,7 +358,12 @@ def test_10_pending_manual_review_reaches_end():
 
 def test_11_rejected_uses_pipeline_status_completed():
     state = _full_state()
-    state["agent_outputs"]["safety"] = {"clean": False, "flags": ["toxicity"], "confidence": 0.99}
+    state["agent_outputs"]["safety"] = {
+        "clean": False,
+        "flags": ["abuse"],
+        "confidence": 0.99,
+        "signals": {"abuse": {"detected": True}},
+    }
     result = quality_gate_node(state)
     assert result["verification_decision"] == DECISION_REJECTED
     assert result["pipeline_status"] == STATUS_COMPLETED

@@ -499,7 +499,13 @@ async def test_28_point_exactly_on_boundary():
 @pytest.mark.asyncio
 async def test_29_pipeline_integration_geo_output_survives_fan_in():
     """TEST 29: Geo Verification node output survives LangGraph fan-in reducer."""
-    graph = create_civic_pipeline_graph()
+    from backend.tests.test_phase1e_issue_intelligence import MockAIEngineSuccess
+    from backend.agents.classifier import IssueIntelligencePydanticOutput
+    factory = make_mock_db_factory(("WARD_03", "Shivajinagar", "Zone 2", True, 100.0))
+    mock_ai = MockAIEngineSuccess(IssueIntelligencePydanticOutput(
+        civic_relevance=True, category="ROADS", subcategory="POTHOLE", severity="MEDIUM", urgency="MEDIUM", confidence=0.9, tags=["pothole"]
+    ))
+    graph = create_civic_pipeline_graph(db_session_factory=factory, ai_engine=mock_ai)
     initial_state = {
         "report_id": "rep-geo-test-29",
         "citizen_id": "cit-101",
@@ -521,7 +527,13 @@ async def test_29_pipeline_integration_geo_output_survives_fan_in():
 @pytest.mark.asyncio
 async def test_30_quality_gate_sees_geo_output():
     """TEST 30: Quality Gate evaluates geo_validation output correctly."""
-    graph = create_civic_pipeline_graph()
+    from backend.tests.test_phase1e_issue_intelligence import MockAIEngineSuccess
+    from backend.agents.classifier import IssueIntelligencePydanticOutput
+    factory = make_mock_db_factory(("WARD_02", "Kothrud", "Zone 1", True, 50.0))
+    mock_ai = MockAIEngineSuccess(IssueIntelligencePydanticOutput(
+        civic_relevance=True, category="WATER", subcategory="WATER_LEAK", severity="MEDIUM", urgency="MEDIUM", confidence=0.9, tags=["water"]
+    ))
+    graph = create_civic_pipeline_graph(db_session_factory=factory, ai_engine=mock_ai)
     initial_state = {
         "report_id": "rep-geo-test-30",
         "raw_payload": {

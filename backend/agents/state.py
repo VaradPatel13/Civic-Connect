@@ -117,12 +117,20 @@ class GeoValidationResult(TypedDict, total=False):
 
 
 class IssueIntelligenceResult(TypedDict, total=False):
-    """Phase-1 Issue Intelligence output contract."""
-    category: str
-    urgency: str  # low, medium, high, critical
-    tags: list[str]
-    public_safety_risk: bool
+    """Phase-1 Issue Intelligence canonical output contract."""
+    analysis_status: str  # "SUCCESS", "PARTIAL", "UNAVAILABLE"
+    civic_relevance: bool | None
+    category: str | None
+    subcategory: str | None
+    severity: str | None  # "LOW", "MEDIUM", "HIGH", "CRITICAL"
+    urgency: str | None   # "LOW", "MEDIUM", "HIGH", "CRITICAL"
     confidence: float
+    tags: list[str]
+    signals: dict[str, Any]  # ambiguous_issue, insufficient_information, multi_issue_report
+    risk_flags: list[str]
+    details: dict[str, Any]
+    # Backward compatibility fields
+    public_safety_risk: bool
     fallback_used: bool
 
 

@@ -61,6 +61,7 @@ from backend.agents.forensics import ForensicsAgent
 from backend.core.pii_masker import mask_pii
 from backend.agents.geo_validator import GeoValidationAgent
 from backend.agents.moderator import ModerationAgent
+from backend.agents.quality_gate import evaluate_quality_gate
 from backend.agents.state import PipelineSharedState, get_agent_output
 from backend.core.ai_engine import BaseAIEngine, UnifiedAIEngine
 from backend.core.config import settings
@@ -290,41 +291,22 @@ def make_geo_node(agent: GeoValidationAgent) -> Any:
 
 # ── Issue Intelligence Adapter ────────────────────────────────────────────────
 def make_issue_intelligence_node(agent: ClassificationAgent) -> Any:
-    """Returns an Issue Intelligence node wrapping the legacy ClassificationAgent.
+    """Returns an Issue Intelligence node executing ClassificationAgent.
 
-    The legacy ClassificationAgent writes to agent_outputs["classification"].
-    This adapter also writes a copy to agent_outputs["issue_intelligence"] for
-    Phase-1 compatibility, preserving backward-compatible "classification" key.
+    Emits Phase-1 canonical agent_outputs["issue_intelligence"] alongside
+    backward-compatible agent_outputs["classification"].
     """
     async def issue_intelligence_node(state: PipelineSharedState) -> dict[str, Any]:
         try:
-            result = await agent.process(state)
-            classification_out = (result.get("agent_outputs") or {}).get("classification") or {}
-            if not classification_out:
-                raise ValueError("ClassificationAgent returned empty output")
+            return await agent.process(state)
         except Exception as err:
             logger.error(f"[IssueNode] Agent failed: {err}. Returning missing-output marker.")
             return {
                 "agent_outputs": {
                     "classification": {},
-                    # "issue_intelligence" key intentionally omitted.
+                    # "issue_intelligence" intentionally omitted on exception → fails prerequisite check
                 }
             }
-
-        issue_intelligence_out = {
-            "category": classification_out.get("category", "ADMIN"),
-            "urgency": classification_out.get("urgency", "medium"),
-            "tags": classification_out.get("tags", []),
-            "public_safety_risk": classification_out.get("urgency") in ("critical", "high"),
-            "confidence": float(classification_out["confidence"]) if "confidence" in classification_out else None,
-            "fallback_used": bool(classification_out.get("fallback_used", False)),
-        }
-        return {
-            "agent_outputs": {
-                "classification": classification_out,
-                "issue_intelligence": issue_intelligence_out,
-            }
-        }
     return issue_intelligence_node
 
 
@@ -351,180 +333,23 @@ def quality_gate_node(state: PipelineSharedState) -> dict[str, Any]:
     """Trust / Quality Gate — the ONLY Phase-1 component authorized to set
     verification_decision.
 
-    FAIL-CLOSED INVARIANT:
-      1. Validate all four required verification outputs exist.
-         If any are missing → PENDING_MANUAL_REVIEW (never VERIFIED).
-      2. Apply safety check (explicit REJECTED path for safety failures).
-      3. Apply conservative multi-signal evaluation.
-         Missing optional fields are treated conservatively (not as positive signals).
-
-    CRITICAL DISTINCTION:
-      verification_decision = REJECTED
-        != pipeline failure (pipeline_status = FAILED)
-      A REJECTED report is a COMPLETED verification workflow.
-      pipeline_status = FAILED means a system/infrastructure error occurred.
+    Delegates evaluation to the deterministic pure Quality Gate Policy Engine
+    (evaluate_quality_gate) while preserving StateGraph reducer contracts.
     """
     report_id = state.get("report_id", "unknown")
-    decision_reasons: list[str] = []
 
-    # ── STEP 1: Prerequisite validation (fail-closed) ─────────────────────
-    missing = _validate_prerequisites(state)
-    if missing:
-        for reason in missing:
-            decision_reasons.append(reason)
-        logger.warning(
-            f"[QualityGate] report={report_id} → PENDING_MANUAL_REVIEW "
-            f"| Missing prerequisites: {missing}"
-        )
-        return {
-            "verification_decision": DECISION_PENDING_MANUAL_REVIEW,
-            "pipeline_status": STATUS_COMPLETED,
-            "agent_outputs": {
-                "quality_gate": {
-                    "verification_decision": DECISION_PENDING_MANUAL_REVIEW,
-                    "trust_score": 0.0,
-                    "decision_reasons": decision_reasons,
-                }
-            },
-        }
+    # Read evidence dictionary from shared state
+    agent_outputs = state.get("agent_outputs", {})
 
-    # All prerequisites present — read outputs
-    safety = get_agent_output(state, "safety")
-    visual = get_agent_output(state, "visual_verification")
-    geo = get_agent_output(state, "geo_validation")
-    issue = get_agent_output(state, "issue_intelligence")
+    # Evaluate deterministic quality gate policy
+    qg_result = evaluate_quality_gate(agent_outputs, report_id=report_id)
+    decision = qg_result["verification_decision"]
 
-    # ── STEP 2: Safety Check ──────────────────────────────────────────────
-    # CRITICAL SECURITY INVARIANT: Failure to run/obtain Safety evidence (clean is None or
-    # analysis_status == "UNAVAILABLE") MUST NEVER result in REJECTED.
-    # It must route to PENDING_MANUAL_REVIEW.
-    analysis_status = safety.get("analysis_status")
-    is_safe = safety.get("clean")
-
-    if analysis_status == "UNAVAILABLE" or is_safe is None:
-        decision_reasons.append(
-            f"Safety analysis unavailable ({safety.get('flags', ['safety_service_failure'])}) — routed to manual review"
-        )
-        logger.warning(f"[QualityGate] report={report_id} → PENDING_MANUAL_REVIEW | Safety status={analysis_status} clean=None")
-        return {
-            "verification_decision": DECISION_PENDING_MANUAL_REVIEW,
-            "pipeline_status": STATUS_COMPLETED,
-            "agent_outputs": {
-                "quality_gate": {
-                    "verification_decision": DECISION_PENDING_MANUAL_REVIEW,
-                    "trust_score": 0.0,
-                    "decision_reasons": decision_reasons,
-                }
-            },
-        }
-
-    # ACTUAL UNSAFE CONTENT (clean is explicitly False)
-    if is_safe is False:
-        flags = safety.get("flags", [])
-        decision_reasons.append(f"Safety violation: {flags}")
-        logger.warning(f"[QualityGate] report={report_id} REJECTED — Safety flags: {flags}")
-        return {
-            "verification_decision": DECISION_REJECTED,
-            "pipeline_status": STATUS_COMPLETED,
-            "agent_outputs": {
-                "quality_gate": {
-                    "verification_decision": DECISION_REJECTED,
-                    "trust_score": 0.0,
-                    "decision_reasons": decision_reasons,
-                }
-            },
-        }
-
-    # ── STEP 3: Conservative Multi-Signal Evaluation ──────────────────────
-    # Missing fields are NOT treated as positive evidence (fail-closed).
-    # None values trigger review rather than passing through as optimistic defaults.
-    class_conf_raw = issue.get("confidence")
-    geo_matched = geo.get("boundary_matched")
-    visual_supports = visual.get("supports_report")
-    evidence_confidence_raw = visual.get("evidence_confidence")
-    risk_flags = visual.get("risk_flags", [])
-
-    # Convert None → sentinel that triggers review
-    class_conf: float = class_conf_raw if isinstance(class_conf_raw, (int, float)) else -1.0
-    evidence_confidence: float = evidence_confidence_raw if isinstance(evidence_confidence_raw, (int, float)) else -1.0
-
-    logger.info(
-        f"[QualityGate] report={report_id} | "
-        f"class_conf={class_conf_raw} geo_matched={geo_matched} "
-        f"visual_supports={visual_supports} evidence_conf={evidence_confidence_raw} "
-        f"risk_flags={risk_flags}"
-    )
-
-    needs_review = (
-        class_conf < 0.60                               # includes None sentinel (-1.0)
-        or geo_matched is not True                       # None or False → review
-        or visual_supports is not True                   # None or False → review
-        or evidence_confidence < 0.5                     # includes None sentinel (-1.0)
-        or len(risk_flags) >= 2
-    )
-
-    if needs_review:
-        if class_conf < 0.60:
-            reason = (
-                "Issue Intelligence confidence unknown"
-                if class_conf_raw is None
-                else f"Low classification confidence: {class_conf:.2f}"
-            )
-            decision_reasons.append(reason)
-        if geo_matched is not True:
-            decision_reasons.append(
-                "Geo boundary not confirmed"
-                if geo_matched is None
-                else "Report coordinates outside PMC jurisdiction"
-            )
-        if visual_supports is not True:
-            decision_reasons.append(
-                "Visual support unknown"
-                if visual_supports is None
-                else "Visual evidence does not support report"
-            )
-        if evidence_confidence < 0.5:
-            decision_reasons.append(
-                "Evidence confidence unknown"
-                if evidence_confidence_raw is None
-                else f"Low evidence confidence: {evidence_confidence:.2f}"
-            )
-        if len(risk_flags) >= 2:
-            decision_reasons.append(f"Multiple visual risk signals: {risk_flags}")
-
-        logger.warning(
-            f"[QualityGate] report={report_id} → PENDING_MANUAL_REVIEW | {decision_reasons}"
-        )
-        safe_conf = max(class_conf, 0.0) if class_conf >= 0 else 0.0
-        safe_ev = max(evidence_confidence, 0.0) if evidence_confidence >= 0 else 0.0
-        return {
-            "verification_decision": DECISION_PENDING_MANUAL_REVIEW,
-            "pipeline_status": STATUS_COMPLETED,
-            "agent_outputs": {
-                "quality_gate": {
-                    "verification_decision": DECISION_PENDING_MANUAL_REVIEW,
-                    "trust_score": round(safe_conf * safe_ev, 3),
-                    "decision_reasons": decision_reasons,
-                }
-            },
-        }
-
-    # ── VERIFIED ─────────────────────────────────────────────────────────────
-    trust_score = round(
-        (class_conf * 0.4 + evidence_confidence * 0.4 + 0.2),
-        3,
-    )
-    decision_reasons.append("All verification signals pass policy thresholds")
-    logger.info(f"[QualityGate] report={report_id} → VERIFIED | trust_score={trust_score}")
     return {
-        "verification_decision": DECISION_VERIFIED,
+        "verification_decision": decision,
         "pipeline_status": STATUS_COMPLETED,
         "agent_outputs": {
-            "quality_gate": {
-                "verification_decision": DECISION_VERIFIED,
-                "trust_score": trust_score,
-                "decision_reasons": decision_reasons,
-            }
+            "quality_gate": qg_result,
         },
     }
 
